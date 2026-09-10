@@ -70,7 +70,7 @@ If you see this warning, stop and use a USB stick or external drive.
 cargo build --release
 ```
 
-The binary lands at `target/release/pala`. It is ~423KB. You can copy it to a USB stick.
+The binary lands at `target/release/pala`. It is ~501KB. You can copy it to a USB stick.
 
 No internet connection required after the initial build. No installer. No runtime dependencies.
 
@@ -180,7 +180,7 @@ The JSON output from `--json` is structured for easy reading:
 
 ### Other things to ask Claude Code
 
-- "I ran `pala --list` and see 33 types — which ones are most likely to contain my deleted presentation?"
+- "I ran `pala --list` and see 49 types — which ones are most likely to contain my deleted presentation?"
 - "What does `truncated: true` mean in the JSON?"
 - "I found 0 files — what should I try next?"
 - "I have a proprietary file format I need to recover. How do I write a custom signature?"
@@ -263,6 +263,25 @@ Ask Claude Code: "I need to recover `.sav` files from a game. The file starts wi
 | rar | rar | RAR Archive |
 | sqlite | db | SQLite Database |
 | eml | eml | Email (EML) |
+| evtx | evtx | Windows Event Log |
+| regf | dat | Windows Registry Hive |
+| lnk | lnk | Windows Shell Link |
+| pf | pf | Windows Prefetch |
+| thumbcache | db | Windows Thumbcache |
+| hibr / HIBR / wake / WAKE | bin | Windows Hibernate File |
+| pagedump / pagedu64 | dmp | Windows Memory Dump (BSOD) |
+| bplist | plist | Apple Binary Property List |
+| dex | dex | Android Dalvik Executable |
+| ntfs_mft | mft | NTFS MFT Entry |
+| fat32_fsinfo | fsinfo | FAT32 FSINFO Sector |
+| ext2_sb | sb | Ext2/3/4 Superblock |
+| ufs1_sb / ufs2_sb | ufs | UFS1/UFS2 Superblock |
+| lime | lime | Linux Memory Acquisition (LiME) |
+| hpak | hpak | HBGary Memory Acquisition (HPAK) |
+| elf | elf | ELF Binary |
+| pe | exe | PE/MZ Executable |
+| mng | mng | MNG Animation |
+| jng | jng | JNG Image |
 
 ---
 
@@ -308,6 +327,10 @@ sudo ./target/release/pala /dev/sda2 /media/usb/recovered/
 
 - Use `-t` to restrict to the type you care about.
 - Sort by size: the file you want likely has a specific size range.
+
+**PALA finds 0 hibr/hibernate files:**
+
+The drive may have resumed from hibernation, which zeros the `hiberfil.sys` header. No magic bytes → PALA cannot find it by signature. Manual recovery: extract `hiberfil.sys` by inode using the filesystem's undelete tools, then use Volatility `imagecopy` to reconstruct the image.
 
 **PALA crashes or exits non-zero:**
 

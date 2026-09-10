@@ -1,8 +1,8 @@
 # PALA
 
-Filesystem-agnostic file carver. Recovers deleted files from raw disk images and block devices by scanning for known file signatures (magic bytes) — no filesystem metadata required.
+File carver and data recovery tool. Recovers deleted files from raw disk images and block devices using three stacked recovery layers: signature carving, filesystem-aware inode recovery, and container unpacking.
 
-Single static binary. ~507KB. No runtime deps. Run it from a USB stick without installing anything on the target system.
+Single static binary. ~957KB. No runtime deps. Run it from a USB stick.
 
 ## Usage
 
@@ -10,12 +10,21 @@ Single static binary. ~507KB. No runtime deps. Run it from a USB stick without i
 pala <source> <outdir> [OPTIONS]
 
 Options:
-  -t, --types <csv>    File types to recover (default: all)
-  -c, --corpus <path>  Load extra signatures from a PALA corpus file
-  -l, --list           List available types and exit
-  -q, --quiet          Suppress all output (use with --json)
-      --json           Write structured JSON summary to stdout
-  -h, --help           Show this help
+  -t, --types <csv>         File types to recover (default: all)
+  -c, --corpus <path>       Load extra signatures from a PALA corpus file
+  -l, --list                List available types and exit
+  -q, --quiet               Suppress progress output (use with --json)
+      --json                Write structured JSON summary to stdout
+      --meta                Extract file metadata into JSON output
+      --max-size <bytes>    Maximum size per recovered file (default: type-specific)
+      --min-size <bytes>    Minimum size per recovered file
+  -n, --count <n>           Stop after recovering N files
+      --triage-mode <mode>  Limit types to a preset group (media, documents, executables, archives, email, windows, databases, memory, filesystem)
+      --filesystem <fs>     Filesystem-aware inode recovery (auto, ext2, ntfs, apfs, fat32, hfs)
+      --skip-high-entropy   Skip candidates whose start sector has Shannon entropy > 7.5
+      --container-depth     Extract member files from carved ZIP/DOCX/XLSX/PPTX containers
+      --no-fat32-stage2     Disable FAT32 deleted-entry recovery stage
+  -h, --help                Show this help
 ```
 
 ```sh
@@ -23,13 +32,61 @@ Options:
 pala disk.img recovered/
 
 # Recover only JPEG and PDF from a live device
-pala /dev/sdb recovered/ -t jpeg,pdf
+sudo pala /dev/sdb recovered/ -t jpeg,pdf
 
-# JSON summary piped to jq
+# Filesystem-aware recovery (finds files by inode, not just magic bytes)
+sudo pala /dev/sdb recovered/ --filesystem=auto
+
+# JSON summary
 pala disk.img out/ --json | jq '.findings[] | {ext, size, offset}'
 
-# Load custom signatures alongside built-in ones
-pala disk.img out/ -c my_sigs.pala
+# Skip encrypted/compressed sectors, extract ZIP members
+pala disk.img out/ --skip-high-entropy --container-depth
+```
+
+## How it works
+
+PALA runs three recovery stages in sequence. Each stage deduplicates against all prior stages by SHA256 — nothing is written twice.
+
+### Stage 1 — Signature carving
+
+Scans raw bytes for known file headers. Works on any source: intact filesystem, corrupted partition, raw block device, memory dump. No filesystem metadata required.
+
+Extraction methods by file type:
+- **End marker** — JPEG (`FF D9`), PNG (IEND chunk), GIF (`00 3B`), PDF (`%%EOF`), RTF (`}`)
+- **Size field** — WAV/WEBP reads RIFF chunk size at offset 4; BMP at offset 2; SQLite from `page_size × page_count` in the 100-byte header; TIFF follows the IFD chain; Registry hives read `hive_bins_size` at offset 40; Prefetch reads `file_size` at offset 12; DEX reads `file_size` at offset 32
+- **Container** — ZIP locates the EOCD record and inspects the central directory for Office filenames (DOCX/XLSX/PPTX)
+
+Short-magic types (2-byte headers like `FF F1` for AAC, `1F 8B` for GZ, `BM` for BMP) are validated against structural fields before extraction to suppress false positives.
+
+### Stage 2 — Filesystem-aware recovery (`--filesystem`)
+
+Walks filesystem metadata to recover files by inode rather than magic bytes. Catches files with no recognizable header and unallocated inodes whose data clusters are still intact.
+
+- **ext2/3/4** — full inode walk via `tsk_recover`
+- **NTFS** — inode walk via TSK + MFT stage-2: parses `$DATA` attribute run lists from carved MFT entries and assembles file content from cluster offsets directly in the source image. Handles non-resident data regardless of fragmentation.
+- **FAT32** — deleted-entry recovery: scans directory entries marked `0xE5` (deleted), reads `first_cluster` and `size` from the surviving entry, chains clusters via the FAT (falls back to contiguous cluster prediction when FAT entries are cleared). Recovers files deleted from consumer SD cards and USB drives without intact FAT chains.
+- **APFS** — inode walk via TSK (`--filesystem=apfs`; requires TSK with APFS support)
+
+`--filesystem=auto` probes the source and selects the appropriate driver.
+
+### Stage 3 — Container unpacking (`--container-depth`)
+
+Opens carved ZIP, DOCX, XLSX, PPTX, JAR, and APK files with the `zip` crate and extracts member files. Depth = 1. Catches embedded images, attachments, and sub-documents that have no independent offset in the raw byte stream.
+
+### Entropy classification
+
+`--skip-high-entropy` computes Shannon entropy per 512-byte sector and discards candidates whose start sector exceeds H = 7.5. Eliminates false-positive hits from encrypted volumes, compressed archives, and encrypted swap.
+
+An entropy survey runs unconditionally after Stage 1 and is reported in `session_summary.entropy_survey` when `--json` is set:
+
+```json
+"entropy_survey": {
+  "zero_sectors": 1024,
+  "high_entropy_sectors": 512,
+  "total_sectors": 8192,
+  "high_entropy_skipped": 3
+}
 ```
 
 ## Supported types
@@ -63,39 +120,95 @@ pala disk.img out/ -c my_sigs.pala
 | lnk | lnk | Windows Shell Link |
 | pf | pf | Windows Prefetch |
 | thumbcache | db | Windows Thumbcache |
-| hibr | bin | Windows Hibernate File |
-| pagedump | dmp | Windows Memory Dump (BSOD) |
+| hibr / hibr_upper | bin | Windows Hibernate File |
+| wake_lower / wake_upper | bin | Windows Hibernate Resume |
+| pagedump / pagedu64 | dmp | Windows Memory Dump (BSOD) |
 | bplist | plist | Apple Binary Property List |
 | dex | dex | Android Dalvik Executable |
+| ntfs_mft | mft | NTFS MFT Entry |
+| fat32_fsinfo | fsinfo | FAT32 FSINFO Sector |
+| ext2_sb | sb | Ext2/3/4 Superblock |
+| ufs1_sb / ufs2_sb | ufs | UFS1/UFS2 Superblock |
+| lime | lime | Linux Memory Acquisition (LiME) |
+| hpak | hpak | HBGary Memory Acquisition (HPAK) |
+| elf | elf | ELF Binary |
+| pe | exe | PE/MZ Executable |
+| mng | mng | MNG Animation |
+| jng | jng | JNG Image |
 
-## How it works
+## JSON output
 
-PALA scans raw bytes for file header patterns (magic bytes). For each match it extracts the file using the appropriate algorithm:
+`--json` writes a structured summary to stdout. Individual findings include `source` to indicate which recovery stage produced them:
 
-- **End marker**: JPEG (FF D9), PNG (IEND chunk), GIF (00 3B), PDF (%%EOF), RTF (})
-- **Size field**: WAV/WEBP reads RIFF chunk size at offset 4; BMP reads size at offset 2; SQLite computes `page_size × page_count` from the 100-byte header; TIFF follows the IFD chain; Registry hives read `hive_bins_size` at offset 40; Prefetch reads file_size at offset 12; DEX reads file_size at offset 32
-- **Container**: ZIP finds the EOCD record then inspects the central directory for Office filenames
+```json
+{
+  "source": "/dev/sdb",
+  "source_bytes": 17179869184,
+  "elapsed_ms": 8200,
+  "found": 47,
+  "findings": [
+    {
+      "offset": 4096,
+      "type": "jpeg",
+      "extension": "jpg",
+      "size": 544,
+      "path": "recovered/jpg_0001.jpg",
+      "sha256": "a3f2...",
+      "quality": "Complete",
+      "source": null
+    },
+    {
+      "offset": 0,
+      "type": "jpeg",
+      "extension": "jpg",
+      "size": 131072,
+      "path": "recovered/jpg_0002.jpg",
+      "sha256": "b7c4...",
+      "quality": "Complete",
+      "source": "mft:00004000"
+    },
+    {
+      "offset": 0,
+      "type": "jpeg",
+      "extension": "jpg",
+      "size": 65536,
+      "path": "recovered/jpg_0003.jpg",
+      "sha256": "d1e9...",
+      "quality": "Fragmented",
+      "source": "fat32:00000200"
+    }
+  ],
+  "session_summary": {
+    "entropy_survey": {
+      "zero_sectors": 1024,
+      "high_entropy_sectors": 0,
+      "total_sectors": 32768,
+      "high_entropy_skipped": 0
+    }
+  }
+}
+```
 
-Short-magic types (2-byte headers like `FF F1` for AAC, `1F 8B` for GZ, `BM` for BMP) are validated against structural fields before extraction to suppress false positives from random data.
+`source` is `null` for sig-carve results, `"mft:<hex_offset>"` for NTFS stage-2, `"fat32:<hex_offset>"` for FAT32 stage-2, `"inode:<path>"` for TSK inode recovery, and `"zip:<hex_offset>:<member_name>"` for container members.
 
-JPEG files where the marker walk hits the max-size window without finding an EOI marker are written with a `_partial` suffix so you know the recovered file is incomplete.
+`quality` is `Complete` (end marker found), `Partial` (truncated at max-size), or `Fragmented` (assembled from non-contiguous clusters).
 
 ## Custom signatures
 
-PALA supports loadable signature corpus files (`-c custom.pala`). A corpus file contains one or more additional file signatures in PALA's binary format. The `corpus.rs` module documents the format; `serialize_corpus()` in that module produces valid corpus bytes from a `Vec<Signature>`.
+```sh
+pala disk.img out/ -c custom.pala
+```
 
-## Why keep it small
-
-The act of downloading a recovery tool can overwrite the deleted data you are trying to recover. A 507KB binary fits on any USB stick and never touches the target drive during download.
+A corpus file contains additional signatures in PALA's binary format. The `serialize_corpus()` function in `corpus.rs` produces valid corpus bytes from a `Vec<Signature>`.
 
 ## Build
 
 ```sh
 cargo build --release
-# binary at target/release/pala
+# binary at target/release/pala (~957KB, statically linked)
 ```
 
-Requires Rust stable. No other build dependencies.
+Requires Rust stable. No other build dependencies. Filesystem-aware recovery (`--filesystem`) requires The Sleuth Kit (`tsk_recover`, `fls`) at runtime — if absent, PALA falls back to sig carving only.
 
 ## License
 
