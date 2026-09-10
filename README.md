@@ -282,7 +282,10 @@ Contributions welcome. The most useful additions are new file signatures. To add
 
 ## Credits
 
-- [Claude Code](https://claude.ai/code) - filesystem recovery stages, entropy classification, ZIP container depth, MFT run list parsing, FAT32 deleted-entry recovery, and test suite
+See [CONTRIBUTORS.md](CONTRIBUTORS.md).
+
+- **Nicholas Kloster** ([@sshpie](https://github.com/sshpie)) - author
+- **Claude Code** ([claude.ai/code](https://claude.ai/code)) - filesystem recovery stages, MFT run list parsing, FAT32 deleted-entry recovery, entropy classification, ZIP container depth, and test suite
 
 ---
 
