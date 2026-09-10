@@ -1,10 +1,6 @@
 # PALA
 
-File carver and data recovery tool. ~957KB. Download it when you need it.
-
-Most people install a data recovery tool without realizing that the act of downloading it is writing over the deleted files they are trying to recover. Most recovery tools are 200MB or more. That is 200MB of crucial disk space - the same space your deleted files still occupy. So we made PALA small.
-
-Single static binary. No runtime deps. No installer. Works on Linux and Windows. Drop it on a USB stick, plug it in, and run it without touching the target drive. Use it with any AI or LLM. Steal it. Make it better. Use it for reverse engineering.
+PALA recovers deleted files from any disk in a 957KB binary, because the 200MB recovery tool you just downloaded probably overwrote them.
 
 ## What PALA can do
 
