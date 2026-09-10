@@ -217,6 +217,10 @@ Open an issue at [github.com/sshpie/PALA](https://github.com/sshpie/PALA/issues)
 
 Contributions welcome. The most useful additions are new file signatures - if you have a proprietary format or an obscure type that PALA misses, open a PR adding it to the `SIGS` array in `src/main.rs`. Each signature needs a magic byte sequence, an optional end marker or size field strategy, a minimum and maximum size, and a short description.
 
+## Credits and references
+
+- [Claude Code](https://claude.ai/code) - contributed signature parsing, filesystem recovery stages, entropy classification, ZIP container depth, and test suite
+
 ## License
 
 MIT OR Apache-2.0
