@@ -5,21 +5,17 @@ on:
   pull_request:
 
 jobs:
-  pipeline:
+  build-and-test:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Rust stable
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache Cargo
-        uses: actions/cache@v4
+      - uses: actions/cache@v4
         with:
           path: |
-            ~/.cargo/bin/
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
@@ -27,94 +23,56 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install ajv-cli
-        run: npm install -g ajv-cli
-
-      - name: Cache model weights
-        id: cache-weights
-        uses: actions/cache@v4
-        with:
-          path: assets/model.safetensors
-          key: bert-all-MiniLM-L6-v2-weights
-
-      - name: Download BERT model weights
-        if: steps.cache-weights.outputs.cache-hit != 'true'
-        run: |
-          curl -L -o assets/model.safetensors \
-            https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/model.safetensors
-          ls -lh assets/
-
-      - name: Run Rust unit tests
-        run: cargo test --release
-
-      - name: Build BARE
+      - name: Build
         run: cargo build --release
 
-      - name: "[nuclei] Run adapter"
+      - name: Smoke test (carve JPEG + PNG from synthetic image)
         run: |
-          python adapters/nuclei/nuclei_to_bare.py \
-            adapters/nuclei/examples/nuclei_sample.jsonl \
-            > /tmp/nuclei_findings.json
+          python3 - <<'EOF'
+          from PIL import Image
+          import random, os
 
-      - name: "[nuclei] Validate findings.json against input schema"
-        run: ajv validate -s schemas/input.schema.json -d /tmp/nuclei_findings.json
+          os.makedirs("/tmp/pala-ci", exist_ok=True)
+          img = Image.new("RGB", (64, 64), (100, 150, 200))
+          img.save("/tmp/pala-ci/orig.png")
+          img.save("/tmp/pala-ci/orig.jpg")
 
-      - name: "[nuclei] Run BARE"
-        run: target/release/bare /tmp/nuclei_findings.json > /tmp/nuclei_output.json
+          with open("/tmp/pala-ci/orig.png", "rb") as f: png = f.read()
+          with open("/tmp/pala-ci/orig.jpg", "rb") as f: jpg = f.read()
+          noise = bytes([random.randint(0, 255) for _ in range(512 * 1024)])
+          with open("/tmp/pala-ci/raw.img", "wb") as f:
+              f.write(noise)
+              f.write(png)
+              f.write(b"\x00" * 256)
+              f.write(jpg)
+          print(f"image written: {len(noise) + len(png) + 256 + len(jpg)} bytes")
+          EOF
+          target/release/pala /tmp/pala-ci/raw.img /tmp/pala-ci/out/ -t jpeg,png
 
-      - name: "[nuclei] Validate output.json against output schema"
-        run: ajv validate -s schemas/output.schema.json -d /tmp/nuclei_output.json
-
-      - name: "[nmap] Run adapter"
+      - name: Verify exact SHA-256 match
         run: |
-          python adapters/nmap/nmap_to_bare.py \
-            adapters/nmap/examples/nmap_sample.xml \
-            > /tmp/nmap_findings.json
+          python3 - <<'EOF'
+          import hashlib, glob, sys
 
-      - name: "[nmap] Validate findings.json against input schema"
-        run: ajv validate -s schemas/input.schema.json -d /tmp/nmap_findings.json
+          def sha(p): return hashlib.sha256(open(p, "rb").read()).hexdigest()
 
-      - name: "[nmap] Run BARE"
-        run: target/release/bare /tmp/nmap_findings.json > /tmp/nmap_output.json
+          orig_png = sha("/tmp/pala-ci/orig.png")
+          orig_jpg = sha("/tmp/pala-ci/orig.jpg")
+          carv_png = sha("/tmp/pala-ci/out/png_0001.png")
+          carv_jpg = sha("/tmp/pala-ci/out/jpg_0001.jpg")
 
-      - name: "[nmap] Validate output.json against output schema"
-        run: ajv validate -s schemas/output.schema.json -d /tmp/nmap_output.json
+          ok = True
+          if orig_png != carv_png:
+              print(f"PNG mismatch: {orig_png} vs {carv_png}"); ok = False
+          if orig_jpg != carv_jpg:
+              print(f"JPG mismatch: {orig_jpg} vs {carv_jpg}"); ok = False
+          if ok:
+              print("SHA-256 match: PASS")
+          sys.exit(0 if ok else 1)
+          EOF
 
-      - name: "[shodan] Run adapter"
+      - name: Binary size check (must be under 2MB)
         run: |
-          python adapters/shodan/shodan_to_bare.py \
-            adapters/shodan/examples/shodan_sample.jsonl \
-            > /tmp/shodan_findings.json
-
-      - name: "[shodan] Validate findings.json against input schema"
-        run: ajv validate -s schemas/input.schema.json -d /tmp/shodan_findings.json
-
-      - name: "[shodan] Run BARE"
-        run: target/release/bare /tmp/shodan_findings.json > /tmp/shodan_output.json
-
-      - name: "[shodan] Validate output.json against output schema"
-        run: ajv validate -s schemas/output.schema.json -d /tmp/shodan_output.json
-
-      - name: Install sentence-transformers for parity check
-        run: pip install --quiet sentence-transformers
-
-      - name: "[parity] Encode same query in Python and Rust"
-        run: |
-          QUERY="unauthenticated remote code execution in apache struts via OGNL injection"
-          echo "$QUERY" | python tools/encode_baseline.py > /tmp/python.vec
-          echo "$QUERY" | target/release/bare --encode > /tmp/rust.vec
-
-      - name: "[parity] Assert encoders agree element-wise"
-        run: python tools/parity_check.py /tmp/python.vec /tmp/rust.vec --threshold 1e-5
-
-      - name: Summary
-        run: |
-          for adapter in nuclei nmap shodan; do
-            FINDING_COUNT=$(python -c "import json; print(len(json.load(open('/tmp/${adapter}_findings.json'))['findings']))")
-            echo "${adapter}: findings=$(wc -c < /tmp/${adapter}_findings.json) bytes, ${FINDING_COUNT} records | output=$(wc -c < /tmp/${adapter}_output.json) bytes"
-          done
+          SIZE=$(stat -c%s target/release/pala)
+          echo "pala binary: ${SIZE} bytes"
+          [ "$SIZE" -lt 2097152 ] || (echo "FAIL: binary exceeds 2MB" && exit 1)
