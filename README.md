@@ -2,23 +2,11 @@
 
 PALA recovers deleted files from any disk in a 957KB binary, because the 200MB recovery tool you just downloaded probably overwrote them.
 
-## What PALA can do
+Single static binary. No runtime deps. No installer. Works on Linux and Windows. Drop it on a USB stick, plug it in, and run it without touching the target drive. Steal it. Make it better. Use it for reverse engineering.
 
-**Recover deleted files** - scans raw bytes for known file signatures and reassembles files from the data still on disk. Works on any source: intact filesystem, corrupted partition, formatted drive, raw block device, or disk image. Supports ext2/3/4, NTFS, FAT32, and APFS via filesystem-aware inode recovery when metadata is intact.
+Most recovery tools give you a GUI and a progress bar. PALA gives you structured JSON output and gets out of the way. That means you can pipe it directly into Claude Code, Codex, or any other AI and let the model triage what was found, prioritize the files worth looking at, and tell you what happened. Run it in a script. Automate it. Chain it with anything. The `--json` flag makes PALA a first-class citizen in any pipeline, not a dead end you have to click through.
 
-**Forensic triage** - `--triage-mode` presets (media, documents, executables, archives, email, windows, databases, memory, filesystem) scope the scan to a category. `--triage-mode=windows` pulls Event logs, Registry hives, Prefetch, Shell links, Thumbcache, and Hibernate files from a disk image without mounting it or touching the filesystem.
-
-**Disk characterization** - the entropy survey (emitted in `--json` output) reports zero sectors (unwritten or wiped), high-entropy sectors (encrypted volumes, compressed regions), and normal sectors. Useful for scoping a forensic image before committing to a full scan - if 80% of sectors are high-entropy, you're looking at an encrypted volume and carving won't yield much. `--skip-high-entropy` drops false-positive hits from those regions automatically.
-
-**Memory image scanning** - LiME and HPAK memory acquisition formats are first-class signature types. Run PALA against a `.lime` or `.hpak` RAM dump to extract JPEG, PDF, ELF, PE, and other artifacts from memory using the same pipeline as a disk image.
-
-**Metadata extraction** - `--meta` pulls structured metadata from carved files without a separate tool pass: JPEG EXIF (camera model, GPS, timestamp), PNG (dimensions, color type), ELF (architecture, entry point), PE (compile timestamp, subsystem, imports), NTFS MFT entries (cluster runs, data size, filename), SQLite (page size, schema). Emitted inline per finding in `--json` output.
-
-**Filesystem structure recovery** - the `ntfs_mft`, `fat32_fsinfo`, `ext2_sb`, and `ufs1_sb`/`ufs2_sb` signature types carve the structural metadata itself. Useful when the partition table is missing and you need to reconstruct where a filesystem lived and what its geometry was before attempting deeper recovery.
-
-**Binary extraction** - `--triage-mode=executables` carves ELF and PE binaries from a disk image. Feeds a disassembler or AV scanner without mounting the image or running the binaries.
-
-**Pipeline integration** - `--json --quiet` produces machine-readable output with per-finding offset, size, SHA256, quality flag (Complete/Partial/Fragmented), and source stage. Clean input for jq, Python, or any downstream tool.
+Under the hood PALA runs three recovery stages in sequence - signature carving across 60 file types, filesystem-aware inode recovery for ext2/3/4, NTFS, FAT32, and APFS, and container unpacking for ZIP-based formats. Every stage deduplicates against the others by SHA256 so nothing is written twice. It also classifies every 512-byte sector by Shannon entropy, which tells you whether you are looking at normal data, wiped space, or an encrypted volume before you commit to a full scan. Custom signature corpora let you add proprietary file types without touching the source.
 
 ## Usage
 
