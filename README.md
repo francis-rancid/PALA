@@ -184,6 +184,8 @@ Options:
 | pe | exe | PE/MZ Executable |
 | mng | mng | MNG Animation |
 | jng | jng | JNG Image |
+| luks | luks | LUKS Encrypted Volume Header |
+| bitlocker | bde | BitLocker Encrypted Volume |
 
 ---
 
@@ -230,6 +232,10 @@ Options:
     }
   ],
   "session_summary": {
+    "bad_sectors": 0,
+    "merge_count": 3,
+    "partial_count": 1,
+    "files_per_gb": 2.74,
     "entropy_survey": {
       "zero_sectors": 1024,
       "high_entropy_sectors": 0,
@@ -261,7 +267,7 @@ A corpus file contains additional signatures in PALA's binary format. The `seria
 
 ## Known Issues
 
-- Filesystem-aware recovery requires The Sleuth Kit at runtime; if absent, PALA silently falls back to signature carving only
+- Filesystem-aware recovery requires The Sleuth Kit at runtime; if absent, PALA warns and falls back to signature carving only
 - FAT32 stage-2 cluster prediction assumes unfragmented files; heavily fragmented volumes will produce incomplete recoveries
 - Files whose sectors have been overwritten by new data cannot be recovered regardless of method
 - Full-disk encryption: PALA cannot recover from an encrypted volume without the key; the entropy survey will report a high percentage of high-entropy sectors as an indicator

@@ -26,6 +26,7 @@ pub enum Special {
     Mkv, Sevenz, Ole2, Mp3, Rar,
     Pcap, Pcapng, Der, Apfs,
     Iso9660,
+    Luks,
 }
 
 // Static signature table — zero-cost, embedded in binary.
@@ -91,6 +92,9 @@ static SIGS: &[Sig] = &[
     Sig { name:"ext2_sb",      ext:"sb",     magic:b"\x53\xEF",                   moff:56,   em:None, em_last:false, em_trail:0, special:Special::Ext2Sb,     max:1024,    min:84,   desc:"Ext2/3/4 Superblock" },
     Sig { name:"ufs1_sb",      ext:"ufs",    magic:b"\x54\x19\x01\x00",           moff:1372, em:None, em_last:false, em_trail:0, special:Special::UfsSb,      max:2048,    min:1400, desc:"UFS1 Superblock" },
     Sig { name:"ufs2_sb",      ext:"ufs",    magic:b"\x19\x01\x54\x19",           moff:1372, em:None, em_last:false, em_trail:0, special:Special::UfsSb,      max:2048,    min:1400, desc:"UFS2 Superblock" },
+    // ── Encrypted volumes ────────────────────────────────────────────────────
+    Sig { name:"luks",         ext:"luks",   magic:b"LUKS\xBA\xBE",               moff:0,    em:None, em_last:false, em_trail:0, special:Special::Luks,       max:4096,    min:592,  desc:"LUKS Encrypted Volume Header" },
+    Sig { name:"bitlocker",    ext:"bde",    magic:b"-FVE-FS-",                   moff:3,    em:None, em_last:false, em_trail:0, special:Special::None,       max:512,     min:512,  desc:"BitLocker Encrypted Volume" },
     // ── Memory forensics (from AMF book synthesis) ───────────────────────────
     Sig { name:"hibr_upper",   ext:"bin",    magic:b"HIBR",                       moff:0,    em:None, em_last:false, em_trail:0, special:Special::None,       max:8*GB,    min:4096, desc:"Windows Hibernate File (HIBR variant)" },
     Sig { name:"wake_lower",   ext:"bin",    magic:b"wake",                       moff:0,    em:None, em_last:false, em_trail:0, special:Special::None,       max:8*GB,    min:4096, desc:"Windows Hibernate File (wake/resume)" },
@@ -807,6 +811,11 @@ fn lime_ok(d: &[u8]) -> bool {
     d.len() >= 8 && u32::from_le_bytes(d[4..8].try_into().unwrap_or([0;4])) == 1
 }
 
+// LUKS: version field (u16 BE at offset 6) must be 1 or 2
+fn luks_ok(d: &[u8]) -> bool {
+    d.len() >= 8 && matches!(u16::from_be_bytes([d[6], d[7]]), 1 | 2)
+}
+
 // ELF: EI_CLASS (byte 4) in {1,2}; EI_DATA (byte 5) in {1,2}
 fn elf_ok(d: &[u8]) -> bool {
     d.len() >= 6 && matches!(d[4], 1|2) && matches!(d[5], 1|2)
@@ -1449,6 +1458,7 @@ fn scan_sig(src: &[u8], base_offset: usize, sig: &DynSig, sig_idx: usize, max_ov
             Special::UfsSb       => ufs_sb_ok(carved),
             Special::PageDump    => pagedump_ok(carved),
             Special::LiME        => lime_ok(carved),
+            Special::Luks        => luks_ok(carved),
             Special::Elf         => elf_ok(carved),
             Special::Pe          => mz_ok(carved),
             _                    => true,
@@ -1644,6 +1654,7 @@ fn frag_valid(data: &[u8], special: Special) -> bool {
         Special::UfsSb       => ufs_sb_ok(data),
         Special::PageDump    => pagedump_ok(data),
         Special::LiME        => lime_ok(data),
+        Special::Luks        => luks_ok(data),
         Special::Dex         => dex_ok(data),
         Special::Pf          => pf_ok(data),
         Special::Thumbcache  => thumbcache_ok(data),
@@ -2299,26 +2310,35 @@ fn fat32_next_cluster(src: &[u8], params: &Fat32Params, cluster: u32) -> Option<
 
 // Assemble file bytes by following the cluster chain, with contiguous-cluster
 // prediction fallback when FAT entries are cleared (deleted file recovery).
-fn fat32_read_file(src: &[u8], params: &Fat32Params, first_cluster: u32, size: usize) -> (Vec<u8>, bool) {
+// Returns (data, quality): Fragmented when prediction was used, Partial when
+// truncated before size, Complete when the FAT chain was intact end-to-end.
+fn fat32_read_file(src: &[u8], params: &Fat32Params, first_cluster: u32, size: usize) -> (Vec<u8>, Quality) {
     let clusters_needed = (size + params.cluster_size - 1) / params.cluster_size;
-    let mut data = Vec::with_capacity(size);
-    let mut cur  = first_cluster;
-    let mut trunc = false;
+    let mut data      = Vec::with_capacity(size);
+    let mut cur       = first_cluster;
+    let mut predicted = false;
 
     for _ in 0..clusters_needed {
-        if cur < 2 { trunc = true; break; }
+        if cur < 2 { return (data, Quality::Partial); }
         let off = fat32_cluster_offset(params, cur);
-        if off + params.cluster_size > src.len() { trunc = true; break; }
+        if off + params.cluster_size > src.len() { return (data, Quality::Partial); }
         let take = params.cluster_size.min(size - data.len());
         data.extend_from_slice(&src[off..off + take]);
         if data.len() >= size { break; }
 
-        // Follow FAT; predict next=cur+1 if chain is cleared (deleted file)
-        cur = fat32_next_cluster(src, params, cur).unwrap_or(cur + 1);
+        match fat32_next_cluster(src, params, cur) {
+            Some(next) => cur = next,
+            None       => { predicted = true; cur += 1; }
+        }
     }
 
-    trunc = trunc || data.len() < size;
-    (data, trunc)
+    if data.len() < size {
+        (data, Quality::Partial)
+    } else if predicted {
+        (data, Quality::Fragmented)
+    } else {
+        (data, Quality::Complete)
+    }
 }
 
 struct Fat32DirEnt { name: String, first_cluster: u32, size: u32 }
@@ -2424,7 +2444,7 @@ fn carve_fat32_stage2(
         }
 
         for entry in deleted {
-            let (data, trunc) = fat32_read_file(src, &params, entry.first_cluster, entry.size as usize);
+            let (data, fat32_quality) = fat32_read_file(src, &params, entry.first_cluster, entry.size as usize);
             if data.is_empty() { continue; }
 
             let mut h = Sha256::new();
@@ -2452,12 +2472,17 @@ fn carve_fat32_stage2(
                 .with_context(|| format!("writing {}", out_path.display()))?;
 
             let meta = if emit_meta { extract_meta(&data, special) } else { None };
+            let trunc = matches!(fat32_quality, Quality::Partial);
 
             if !quiet {
-                eprintln!("         {ext:<5}  {:>8}  fat32  [{name_hint}]{trunc_mark}  {fname}",
+                let quality_mark = match fat32_quality {
+                    Quality::Partial    => " [trunc]",
+                    Quality::Fragmented => " [frag]",
+                    Quality::Complete   => "",
+                };
+                eprintln!("         {ext:<5}  {:>8}  fat32  [{name_hint}]{quality_mark}  {fname}",
                           human_size(data.len()),
-                          name_hint = entry.name,
-                          trunc_mark = if trunc { " [trunc]" } else { "" });
+                          name_hint = entry.name);
             }
 
             out.push(Finding {
@@ -2468,7 +2493,7 @@ fn carve_fat32_stage2(
                 size:            data.len(),
                 path:            out_path,
                 trunc,
-                quality:         if trunc { Quality::Partial } else { Quality::Complete },
+                quality:         fat32_quality,
                 sha256:          sha,
                 has_bad_sectors: false,
                 meta,
@@ -3067,7 +3092,8 @@ fn main() -> Result<()> {
             format!(r#","entropy_survey":{{"zero_sectors":{entropy_zero},"high_entropy_sectors":{entropy_high},"total_sectors":{entropy_total},"high_entropy_skipped":{}}}"#,
                     state.high_entropy_sectors_skipped)
         } else { String::new() };
-        print!(r#"],"session_summary":{{"bad_sectors":{bad_sectors},"merge_count":{},"files_per_gb":{rate_per_gb:.2}{bso_j}{entropy_j}}}}}"#,
+        let partial_count = findings.iter().filter(|f| matches!(f.quality, Quality::Partial)).count();
+        print!(r#"],"session_summary":{{"bad_sectors":{bad_sectors},"merge_count":{},"partial_count":{partial_count},"files_per_gb":{rate_per_gb:.2}{bso_j}{entropy_j}}}}}"#,
                state.merge_count);
         println!();
     }
