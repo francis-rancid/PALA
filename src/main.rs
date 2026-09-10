@@ -279,6 +279,23 @@ fn bmp_ok(d: &[u8]) -> bool {
     VALID.contains(&u32::from_le_bytes(d[14..18].try_into().unwrap()))
 }
 
+// ─── Utilities ────────────────────────────────────────────────────────────────
+
+fn human_size(n: usize) -> String {
+    if n >= 1024 * 1024 { format!("{:.1}MB", n as f64 / (1024.0 * 1024.0)) }
+    else if n >= 1024   { format!("{:.1}KB", n as f64 / 1024.0) }
+    else                { format!("{}B", n) }
+}
+
+#[cfg(unix)]
+fn same_device(a: &Path, b: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    match (std::fs::metadata(a), std::fs::metadata(b)) {
+        (Ok(ma), Ok(mb)) => ma.dev() == mb.dev(),
+        _ => false,
+    }
+}
+
 // ─── Carving engine ───────────────────────────────────────────────────────────
 
 pub struct Finding {
@@ -307,8 +324,12 @@ pub fn carve(
     let mut out:    Vec<Finding>               = Vec::new();
     let mut seen:   HashSet<usize>             = HashSet::new();
     let mut ctr:    HashMap<&'static str, usize> = HashMap::new();
+    let total = sigs.len();
 
-    for sig in sigs {
+    for (si, sig) in sigs.iter().enumerate() {
+        if !quiet {
+            eprintln!("  [{:>2}/{}] {}...", si + 1, total, sig.name);
+        }
         let finder = memmem::Finder::new(sig.magic);
         let min = sig.min.max(DEFAULT_MIN);
         let mut ss = 0usize;
@@ -424,7 +445,7 @@ pub fn carve(
             let sha = format!("{:x}", h.finalize());
 
             if !quiet {
-                eprintln!("{:>10}  {:>10}B  0x{:08x}  {}", fext, fdata.len(), start, fname);
+                eprintln!("         {:<5}  {:>8}  offset=0x{:08x}  {}", fext, human_size(fdata.len()), start, fname);
             }
 
             seen.insert(start);
@@ -442,15 +463,20 @@ pub fn carve(
 fn usage() {
     eprintln!("pala — filesystem-agnostic file carver\n");
     eprintln!("Usage:  pala <source> <outdir> [OPTIONS]\n");
+    eprintln!("Arguments:");
+    eprintln!("  source    Disk image file or block device to scan");
+    eprintln!("  outdir    Directory to write recovered files into");
+    eprintln!("            MUST be on a different drive than <source>\n");
     eprintln!("Options:");
     eprintln!("  -t, --types <csv>   File types to recover (default: all)");
     eprintln!("  -l, --list          List available types and exit");
-    eprintln!("  -q, --quiet         Suppress per-file output");
-    eprintln!("      --json          JSON summary to stdout");
+    eprintln!("  -q, --quiet         Suppress all output (use with --json)");
+    eprintln!("      --json          Write JSON summary to stdout");
     eprintln!("  -h, --help          Show this help\n");
     eprintln!("Examples:");
-    eprintln!("  pala disk.img recovered/");
-    eprintln!("  pala /dev/sdb recovered/ -t jpeg,png,pdf");
+    eprintln!("  pala disk.img /mnt/usb/recovered/");
+    eprintln!("  pala /dev/sdb /mnt/usb/recovered/ -t jpeg,png,pdf");
+    eprintln!("  pala disk.img out/ --json | jq '.[] | {{ext,size}}'");
 }
 
 fn main() -> Result<()> {
@@ -504,12 +530,29 @@ fn main() -> Result<()> {
     };
     if size == 0 { anyhow::bail!("source is empty"); }
 
-    if !quiet { eprintln!("pala: scanning {src_path} ({size} bytes)"); }
+    let outdir = PathBuf::from(&out_path);
+    fs::create_dir_all(&outdir)?;
+
+    // Warn if output is on the same device as the source — writing here can
+    // overwrite the clusters we're trying to read.
+    #[cfg(unix)]
+    if same_device(std::path::Path::new(&src_path), &outdir) {
+        eprintln!("WARNING: output directory is on the SAME device as the source.");
+        eprintln!("         Writing recovered files here risks overwriting the data you are");
+        eprintln!("         trying to recover.  Use a different drive for --output.");
+        eprintln!("         (e.g. a USB stick, an external drive, or a network share)");
+        eprintln!();
+    }
+
+    if !quiet {
+        eprintln!("pala: source  = {src_path} ({})", human_size(size));
+        eprintln!("pala: output  = {out_path}");
+        eprintln!();
+    }
 
     let mmap = unsafe { MmapOptions::new().len(size).map(&file) }
         .with_context(|| format!("mmap {src_path}"))?;
 
-    let outdir = PathBuf::from(&out_path);
     let findings = carve(&mmap, &outdir, types.as_deref(), quiet)?;
 
     if json {
@@ -525,6 +568,23 @@ fn main() -> Result<()> {
         println!("]");
     }
 
-    if !quiet { eprintln!("pala: recovered {} file(s) → {}", findings.len(), out_path); }
+    if !quiet {
+        eprintln!();
+        if findings.is_empty() {
+            eprintln!("pala: no files recovered.");
+        } else {
+            // Grouped summary by extension
+            let mut by_ext: HashMap<&str, usize> = HashMap::new();
+            for f in &findings { *by_ext.entry(f.ext).or_insert(0) += 1; }
+            let mut groups: Vec<_> = by_ext.iter().collect();
+            groups.sort_by_key(|(ext, _)| *ext);
+            let summary = groups.iter()
+                .map(|(ext, n)| format!("{n} {ext}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            eprintln!("pala: recovered {} file(s) → {out_path}", findings.len());
+            eprintln!("pala: {summary}");
+        }
+    }
     Ok(())
 }

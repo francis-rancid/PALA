@@ -71,6 +71,12 @@ jobs:
           sys.exit(0 if ok else 1)
           EOF
 
+      - name: Install Python test dependencies
+        run: pip install Pillow
+
+      - name: Full test suite (tests/test_pala.py)
+        run: python3 tests/test_pala.py
+
       - name: Binary size check (must be under 2MB)
         run: |
           SIZE=$(stat -c%s target/release/pala)
