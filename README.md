@@ -4,6 +4,8 @@ PALA recovers deleted files from any disk in a 957KB binary, because the 200MB r
 
 Single static binary. No runtime deps. No installer. Works on Linux and Windows. Drop it on a USB stick, plug it in, and run it without touching the target drive. Steal it. Make it better. Use it for reverse engineering.
 
+Claude Code accidentally deleted something important? Run PALA against the disk, pipe the JSON output back to your AI, and let it tell you exactly what it found and which file is the one you lost. The whole recovery session stays inside your terminal, inside your conversation, without switching tools or losing context.
+
 Most recovery tools give you a GUI and a progress bar. PALA gives you structured JSON output and gets out of the way. That means you can pipe it directly into Claude Code, Codex, or any other AI and let the model triage what was found, prioritize the files worth looking at, and tell you what happened. Run it in a script. Automate it. Chain it with anything. The `--json` flag makes PALA a first-class citizen in any pipeline, not a dead end you have to click through.
 
 Under the hood PALA runs three recovery stages in sequence - signature carving across 60 file types, filesystem-aware inode recovery for ext2/3/4, NTFS, FAT32, and APFS, and container unpacking for ZIP-based formats. Every stage deduplicates against the others by SHA256 so nothing is written twice. It also classifies every 512-byte sector by Shannon entropy, which tells you whether you are looking at normal data, wiped space, or an encrypted volume before you commit to a full scan. Custom signature corpora let you add proprietary file types without touching the source.
