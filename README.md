@@ -64,51 +64,6 @@ pala disk.img out/ --json | jq '.findings[] | {ext, size, offset}'
 pala disk.img out/ --skip-high-entropy --container-depth
 ```
 
-## How it works
-
-PALA runs three recovery stages in sequence. Each stage deduplicates against all prior stages by SHA256 - nothing is written twice.
-
-### Stage 1 - Signature carving
-
-Scans raw bytes for known file headers. Works on any source: intact filesystem, corrupted partition, raw block device, memory dump. No filesystem metadata required.
-
-Extraction methods by file type:
-- **End marker** - JPEG (`FF D9`), PNG (IEND chunk), GIF (`00 3B`), PDF (`%%EOF`), RTF (`}`)
-- **Size field** - WAV/WEBP reads RIFF chunk size at offset 4; BMP at offset 2; SQLite from `page_size × page_count` in the 100-byte header; TIFF follows the IFD chain; Registry hives read `hive_bins_size` at offset 40; Prefetch reads `file_size` at offset 12; DEX reads `file_size` at offset 32
-- **Container** - ZIP locates the EOCD record and inspects the central directory for Office filenames (DOCX/XLSX/PPTX)
-
-Short-magic types (2-byte headers like `FF F1` for AAC, `1F 8B` for GZ, `BM` for BMP) are validated against structural fields before extraction to suppress false positives.
-
-### Stage 2 - Filesystem-aware recovery (`--filesystem`)
-
-Walks filesystem metadata to recover files by inode rather than magic bytes. Catches files with no recognizable header and unallocated inodes whose data clusters are still intact.
-
-- **ext2/3/4** - full inode walk via `tsk_recover`
-- **NTFS** - inode walk via TSK + MFT stage-2: parses `$DATA` attribute run lists from carved MFT entries and assembles file content from cluster offsets directly in the source image. Handles non-resident data regardless of fragmentation.
-- **FAT32** - deleted-entry recovery: scans directory entries marked `0xE5` (deleted), reads `first_cluster` and `size` from the surviving entry, chains clusters via the FAT (falls back to contiguous cluster prediction when FAT entries are cleared). Recovers files deleted from consumer SD cards and USB drives without intact FAT chains.
-- **APFS** - inode walk via TSK (`--filesystem=apfs`; requires TSK with APFS support)
-
-`--filesystem=auto` probes the source and selects the appropriate driver.
-
-### Stage 3 - Container unpacking (`--container-depth`)
-
-Opens carved ZIP, DOCX, XLSX, PPTX, JAR, and APK files with the `zip` crate and extracts member files. Depth = 1. Catches embedded images, attachments, and sub-documents that have no independent offset in the raw byte stream.
-
-### Entropy classification
-
-`--skip-high-entropy` computes Shannon entropy per 512-byte sector and discards candidates whose start sector exceeds H = 7.5. Eliminates false-positive hits from encrypted volumes, compressed archives, and encrypted swap.
-
-An entropy survey runs unconditionally after Stage 1 and is reported in `session_summary.entropy_survey` when `--json` is set:
-
-```json
-"entropy_survey": {
-  "zero_sectors": 1024,
-  "high_entropy_sectors": 512,
-  "total_sectors": 8192,
-  "high_entropy_skipped": 3
-}
-```
-
 ## Supported types
 
 | Type | Extension | Description |
