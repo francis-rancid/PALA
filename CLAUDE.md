@@ -121,31 +121,120 @@ pala: 7 jpg, 4 png, 3 pdf
 
 ## Working with Claude Code
 
-Claude Code can help at each stage. Paste errors or questions directly into the conversation.
+Claude Code can guide the full recovery session interactively. Here is what a typical session looks like.
 
-### Identify your drive:
+---
 
-> "I ran `lsblk` and got this output — which device is my main drive?"
+**You:** I accidentally deleted a folder of photos from my laptop. I have a USB drive plugged in. Where do I start?
 
-### Figure out what to recover:
-
-> "I deleted a folder of photos and a PDF report. What `-t` flags should I use?"
-
-### Read the JSON findings:
-
-> "Here is `findings.json` from pala — which files are most likely to be the ones I deleted?"
+**Claude Code:** Run this to see your drives:
 
 ```sh
-cat findings.json | head -40
+lsblk -o NAME,SIZE,TYPE,MOUNTPOINT
 ```
 
-### If you are unsure what file type you need:
+Paste the output here and I'll tell you which device to scan and how to safely route the output to your USB stick.
+
+---
+
+**You:** [pastes lsblk output]
+
+**Claude Code:** Your main drive is `/dev/sda`. Your USB stick is at `/dev/sdb`, mounted at `/media/usb`. Run:
 
 ```sh
-./target/release/pala --list
+sudo ./target/release/pala /dev/sda /media/usb/recovered/ -t jpeg,png --json > /media/usb/findings.json
 ```
 
-Paste the list into Claude Code and describe what you deleted.
+The `--json` flag writes a structured report alongside the recovered files. I can read that report and tell you which files are most likely to be the ones you deleted.
+
+---
+
+**You:** [runs pala, then:] Done. Here's the findings file.
+
+**Claude Code:** [reads findings.json] I can see 47 JPEGs and 12 PNGs. The 6 largest JPEGs are between 2MB and 8MB — those are likely your camera photos. The smaller ones are probably thumbnails or embedded images from documents. Here are the ones to check first: `jpg_0003.jpg`, `jpg_0007.jpg`, `jpg_0012.jpg`.
+
+---
+
+The JSON output from `--json` is structured for easy reading:
+
+```json
+{
+  "source": "/dev/sda",
+  "source_bytes": 500107862016,
+  "elapsed_ms": 41200,
+  "found": 59,
+  "findings": [
+    {
+      "offset": 1073741824,
+      "type": "jpeg",
+      "extension": "jpg",
+      "description": "JPEG Image",
+      "size": 3145728,
+      "path": "/media/usb/recovered/jpg_0001.jpg",
+      "truncated": false,
+      "sha256": "a3f2..."
+    }
+  ]
+}
+```
+
+### Other things to ask Claude Code
+
+- "I ran `pala --list` and see 33 types — which ones are most likely to contain my deleted presentation?"
+- "What does `truncated: true` mean in the JSON?"
+- "I found 0 files — what should I try next?"
+- "I have a proprietary file format I need to recover. How do I write a custom signature?"
+
+---
+
+## Custom signatures
+
+If you need to recover a file type not built into PALA, you can write a custom signature corpus and load it with `-c`:
+
+```sh
+pala disk.img out/ -c my_game_saves.pala
+```
+
+A corpus file is a small binary file containing one or more signature records. The format is documented in `src/corpus.rs`. To create one:
+
+```python
+# example: add a signature for a proprietary save file
+import struct
+
+PALA_MAGIC = b"PALA"
+VERSION = 0x01
+
+def make_corpus(sigs):
+    buf = PALA_MAGIC + bytes([VERSION]) + struct.pack("<I", len(sigs))
+    for s in sigs:
+        name  = s["name"].encode()
+        ext   = s["ext"].encode()
+        magic = s["magic"]
+        desc  = s["desc"].encode()
+        flags = 0  # no end_magic, no special handling
+        buf += bytes([len(name)]) + name
+        buf += bytes([len(ext)])  + ext
+        buf += bytes([len(magic)]) + magic
+        buf += bytes([flags])
+        buf += bytes([0])              # magic_offset
+        buf += struct.pack("<Q", s["max_size"])
+        buf += struct.pack("<I", s["min_size"])
+        buf += bytes([len(desc)]) + desc
+    return buf
+
+corpus = make_corpus([{
+    "name": "mysave",
+    "ext":  "sav",
+    "magic": b"MYSAVE\x01",
+    "max_size": 10 * 1024 * 1024,
+    "min_size": 64,
+    "desc": "My Game Save File",
+}])
+
+open("my_game_saves.pala", "wb").write(corpus)
+```
+
+Ask Claude Code: "I need to recover `.sav` files from a game. The file starts with `MYSAVE` followed by a version byte. How do I write a PALA corpus for this?"
 
 ---
 
