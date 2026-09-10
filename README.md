@@ -2,27 +2,27 @@
 
 File carver and data recovery tool. ~957KB. Download it when you need it.
 
-Most people install a data recovery tool without realizing that the act of downloading it is writing over the deleted files they are trying to recover. Most recovery tools are 200MB or more. That is 200MB of crucial disk space — the same space your deleted files still occupy. So we made PALA small.
+Most people install a data recovery tool without realizing that the act of downloading it is writing over the deleted files they are trying to recover. Most recovery tools are 200MB or more. That is 200MB of crucial disk space - the same space your deleted files still occupy. So we made PALA small.
 
 Single static binary. No runtime deps. No installer. Works on Linux and Windows. Drop it on a USB stick, plug it in, and run it without touching the target drive. Use it with any AI or LLM. Steal it. Make it better. Use it for reverse engineering.
 
 ## What PALA can do
 
-**Recover deleted files** — scans raw bytes for known file signatures and reassembles files from the data still on disk. Works on any source: intact filesystem, corrupted partition, formatted drive, raw block device, or disk image. Supports ext2/3/4, NTFS, FAT32, and APFS via filesystem-aware inode recovery when metadata is intact.
+**Recover deleted files** - scans raw bytes for known file signatures and reassembles files from the data still on disk. Works on any source: intact filesystem, corrupted partition, formatted drive, raw block device, or disk image. Supports ext2/3/4, NTFS, FAT32, and APFS via filesystem-aware inode recovery when metadata is intact.
 
-**Forensic triage** — `--triage-mode` presets (media, documents, executables, archives, email, windows, databases, memory, filesystem) scope the scan to a category. `--triage-mode=windows` pulls Event logs, Registry hives, Prefetch, Shell links, Thumbcache, and Hibernate files from a disk image without mounting it or touching the filesystem.
+**Forensic triage** - `--triage-mode` presets (media, documents, executables, archives, email, windows, databases, memory, filesystem) scope the scan to a category. `--triage-mode=windows` pulls Event logs, Registry hives, Prefetch, Shell links, Thumbcache, and Hibernate files from a disk image without mounting it or touching the filesystem.
 
-**Disk characterization** — the entropy survey (emitted in `--json` output) reports zero sectors (unwritten or wiped), high-entropy sectors (encrypted volumes, compressed regions), and normal sectors. Useful for scoping a forensic image before committing to a full scan — if 80% of sectors are high-entropy, you're looking at an encrypted volume and carving won't yield much. `--skip-high-entropy` drops false-positive hits from those regions automatically.
+**Disk characterization** - the entropy survey (emitted in `--json` output) reports zero sectors (unwritten or wiped), high-entropy sectors (encrypted volumes, compressed regions), and normal sectors. Useful for scoping a forensic image before committing to a full scan - if 80% of sectors are high-entropy, you're looking at an encrypted volume and carving won't yield much. `--skip-high-entropy` drops false-positive hits from those regions automatically.
 
-**Memory image scanning** — LiME and HPAK memory acquisition formats are first-class signature types. Run PALA against a `.lime` or `.hpak` RAM dump to extract JPEG, PDF, ELF, PE, and other artifacts from memory using the same pipeline as a disk image.
+**Memory image scanning** - LiME and HPAK memory acquisition formats are first-class signature types. Run PALA against a `.lime` or `.hpak` RAM dump to extract JPEG, PDF, ELF, PE, and other artifacts from memory using the same pipeline as a disk image.
 
-**Metadata extraction** — `--meta` pulls structured metadata from carved files without a separate tool pass: JPEG EXIF (camera model, GPS, timestamp), PNG (dimensions, color type), ELF (architecture, entry point), PE (compile timestamp, subsystem, imports), NTFS MFT entries (cluster runs, data size, filename), SQLite (page size, schema). Emitted inline per finding in `--json` output.
+**Metadata extraction** - `--meta` pulls structured metadata from carved files without a separate tool pass: JPEG EXIF (camera model, GPS, timestamp), PNG (dimensions, color type), ELF (architecture, entry point), PE (compile timestamp, subsystem, imports), NTFS MFT entries (cluster runs, data size, filename), SQLite (page size, schema). Emitted inline per finding in `--json` output.
 
-**Filesystem structure recovery** — the `ntfs_mft`, `fat32_fsinfo`, `ext2_sb`, and `ufs1_sb`/`ufs2_sb` signature types carve the structural metadata itself. Useful when the partition table is missing and you need to reconstruct where a filesystem lived and what its geometry was before attempting deeper recovery.
+**Filesystem structure recovery** - the `ntfs_mft`, `fat32_fsinfo`, `ext2_sb`, and `ufs1_sb`/`ufs2_sb` signature types carve the structural metadata itself. Useful when the partition table is missing and you need to reconstruct where a filesystem lived and what its geometry was before attempting deeper recovery.
 
-**Binary extraction** — `--triage-mode=executables` carves ELF and PE binaries from a disk image. Feeds a disassembler or AV scanner without mounting the image or running the binaries.
+**Binary extraction** - `--triage-mode=executables` carves ELF and PE binaries from a disk image. Feeds a disassembler or AV scanner without mounting the image or running the binaries.
 
-**Pipeline integration** — `--json --quiet` produces machine-readable output with per-finding offset, size, SHA256, quality flag (Complete/Partial/Fragmented), and source stage. Clean input for jq, Python, or any downstream tool.
+**Pipeline integration** - `--json --quiet` produces machine-readable output with per-finding offset, size, SHA256, quality flag (Complete/Partial/Fragmented), and source stage. Clean input for jq, Python, or any downstream tool.
 
 ## Usage
 
@@ -66,31 +66,31 @@ pala disk.img out/ --skip-high-entropy --container-depth
 
 ## How it works
 
-PALA runs three recovery stages in sequence. Each stage deduplicates against all prior stages by SHA256 — nothing is written twice.
+PALA runs three recovery stages in sequence. Each stage deduplicates against all prior stages by SHA256 - nothing is written twice.
 
-### Stage 1 — Signature carving
+### Stage 1 - Signature carving
 
 Scans raw bytes for known file headers. Works on any source: intact filesystem, corrupted partition, raw block device, memory dump. No filesystem metadata required.
 
 Extraction methods by file type:
-- **End marker** — JPEG (`FF D9`), PNG (IEND chunk), GIF (`00 3B`), PDF (`%%EOF`), RTF (`}`)
-- **Size field** — WAV/WEBP reads RIFF chunk size at offset 4; BMP at offset 2; SQLite from `page_size × page_count` in the 100-byte header; TIFF follows the IFD chain; Registry hives read `hive_bins_size` at offset 40; Prefetch reads `file_size` at offset 12; DEX reads `file_size` at offset 32
-- **Container** — ZIP locates the EOCD record and inspects the central directory for Office filenames (DOCX/XLSX/PPTX)
+- **End marker** - JPEG (`FF D9`), PNG (IEND chunk), GIF (`00 3B`), PDF (`%%EOF`), RTF (`}`)
+- **Size field** - WAV/WEBP reads RIFF chunk size at offset 4; BMP at offset 2; SQLite from `page_size × page_count` in the 100-byte header; TIFF follows the IFD chain; Registry hives read `hive_bins_size` at offset 40; Prefetch reads `file_size` at offset 12; DEX reads `file_size` at offset 32
+- **Container** - ZIP locates the EOCD record and inspects the central directory for Office filenames (DOCX/XLSX/PPTX)
 
 Short-magic types (2-byte headers like `FF F1` for AAC, `1F 8B` for GZ, `BM` for BMP) are validated against structural fields before extraction to suppress false positives.
 
-### Stage 2 — Filesystem-aware recovery (`--filesystem`)
+### Stage 2 - Filesystem-aware recovery (`--filesystem`)
 
 Walks filesystem metadata to recover files by inode rather than magic bytes. Catches files with no recognizable header and unallocated inodes whose data clusters are still intact.
 
-- **ext2/3/4** — full inode walk via `tsk_recover`
-- **NTFS** — inode walk via TSK + MFT stage-2: parses `$DATA` attribute run lists from carved MFT entries and assembles file content from cluster offsets directly in the source image. Handles non-resident data regardless of fragmentation.
-- **FAT32** — deleted-entry recovery: scans directory entries marked `0xE5` (deleted), reads `first_cluster` and `size` from the surviving entry, chains clusters via the FAT (falls back to contiguous cluster prediction when FAT entries are cleared). Recovers files deleted from consumer SD cards and USB drives without intact FAT chains.
-- **APFS** — inode walk via TSK (`--filesystem=apfs`; requires TSK with APFS support)
+- **ext2/3/4** - full inode walk via `tsk_recover`
+- **NTFS** - inode walk via TSK + MFT stage-2: parses `$DATA` attribute run lists from carved MFT entries and assembles file content from cluster offsets directly in the source image. Handles non-resident data regardless of fragmentation.
+- **FAT32** - deleted-entry recovery: scans directory entries marked `0xE5` (deleted), reads `first_cluster` and `size` from the surviving entry, chains clusters via the FAT (falls back to contiguous cluster prediction when FAT entries are cleared). Recovers files deleted from consumer SD cards and USB drives without intact FAT chains.
+- **APFS** - inode walk via TSK (`--filesystem=apfs`; requires TSK with APFS support)
 
 `--filesystem=auto` probes the source and selects the appropriate driver.
 
-### Stage 3 — Container unpacking (`--container-depth`)
+### Stage 3 - Container unpacking (`--container-depth`)
 
 Opens carved ZIP, DOCX, XLSX, PPTX, JAR, and APK files with the `zip` crate and extracts member files. Depth = 1. Catches embedded images, attachments, and sub-documents that have no independent offset in the raw byte stream.
 
@@ -228,7 +228,7 @@ cargo build --release
 # binary at target/release/pala (~957KB, statically linked)
 ```
 
-Requires Rust stable. No other build dependencies. Filesystem-aware recovery (`--filesystem`) requires The Sleuth Kit (`tsk_recover`, `fls`) at runtime — if absent, PALA falls back to sig carving only.
+Requires Rust stable. No other build dependencies. Filesystem-aware recovery (`--filesystem`) requires The Sleuth Kit (`tsk_recover`, `fls`) at runtime - if absent, PALA falls back to sig carving only.
 
 ## License
 
