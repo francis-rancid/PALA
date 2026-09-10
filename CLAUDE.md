@@ -1,10 +1,10 @@
-# PALA — Claude Code Recovery Guide
+# PALA - Claude Code Recovery Guide
 
 You accidentally deleted a file. This guide walks you through recovering it with PALA and Claude Code.
 
 ---
 
-## Step 1 — Stop writing to the drive immediately
+## Step 1 - Stop writing to the drive immediately
 
 Every byte written to the drive can overwrite the deleted file. Do not:
 
@@ -16,7 +16,7 @@ If you deleted from your main system drive (`/`), work fast.
 
 ---
 
-## Step 2 — Find your source drive
+## Step 2 - Find your source drive
 
 Run this to list drives and their mount points:
 
@@ -45,7 +45,7 @@ df -h
 
 ---
 
-## Step 3 — Choose a safe output location
+## Step 3 - Choose a safe output location
 
 **Critical:** The output directory must be on a **different drive** than the source. Writing recovered files to the same drive risks overwriting the data you are trying to recover.
 
@@ -64,19 +64,19 @@ If you see this warning, stop and use a USB stick or external drive.
 
 ---
 
-## Step 4 — Build PALA (first time only)
+## Step 4 - Build PALA (first time only)
 
 ```sh
 cargo build --release
 ```
 
-The binary lands at `target/release/pala`. It is ~501KB. You can copy it to a USB stick.
+The binary lands at `target/release/pala`. It is ~957KB. You can copy it to a USB stick.
 
 No internet connection required after the initial build. No installer. No runtime dependencies.
 
 ---
 
-## Step 5 — Run recovery
+## Step 5 - Run recovery
 
 ### Recover everything:
 
@@ -106,9 +106,9 @@ sudo ./target/release/pala /dev/sda2 /media/usb/recovered/ --json > findings.jso
 
 ---
 
-## Step 6 — Check results
+## Step 6 - Check results
 
-Recovered files are named `{type}_{N:04}.{ext}` — for example `jpg_0001.jpg`, `pdf_0003.pdf`.
+Recovered files are named `{type}_{N:04}.{ext}` - for example `jpg_0001.jpg`, `pdf_0003.pdf`.
 
 A summary prints at the end:
 
@@ -151,7 +151,7 @@ The `--json` flag writes a structured report alongside the recovered files. I ca
 
 **You:** [runs pala, then:] Done. Here's the findings file.
 
-**Claude Code:** [reads findings.json] I can see 47 JPEGs and 12 PNGs. The 6 largest JPEGs are between 2MB and 8MB — those are likely your camera photos. The smaller ones are probably thumbnails or embedded images from documents. Here are the ones to check first: `jpg_0003.jpg`, `jpg_0007.jpg`, `jpg_0012.jpg`.
+**Claude Code:** [reads findings.json] I can see 47 JPEGs and 12 PNGs. The 6 largest JPEGs are between 2MB and 8MB - those are likely your camera photos. The smaller ones are probably thumbnails or embedded images from documents. Here are the ones to check first: `jpg_0003.jpg`, `jpg_0007.jpg`, `jpg_0012.jpg`.
 
 ---
 
@@ -180,9 +180,9 @@ The JSON output from `--json` is structured for easy reading:
 
 ### Other things to ask Claude Code
 
-- "I ran `pala --list` and see 49 types — which ones are most likely to contain my deleted presentation?"
+- "I ran `pala --list` and see 49 types - which ones are most likely to contain my deleted presentation?"
 - "What does `truncated: true` mean in the JSON?"
-- "I found 0 files — what should I try next?"
+- "I found 0 files - what should I try next?"
 - "I have a proprietary file format I need to recover. How do I write a custom signature?"
 
 ---
@@ -287,7 +287,7 @@ Ask Claude Code: "I need to recover `.sav` files from a game. The file starts wi
 
 ## Notes on what PALA can and cannot recover
 
-PALA uses **file carving** — it scans raw bytes for known file signatures (magic bytes). It does not use filesystem metadata.
+PALA uses **file carving** - it scans raw bytes for known file signatures (magic bytes). It does not use filesystem metadata.
 
 **PALA can recover:**
 - Files deleted with `rm`, moved to Trash then emptied, or lost after a format

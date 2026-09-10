@@ -1,4 +1,0 @@
-# Sanitized example fixtures for the shodan adapter — IPs remapped to RFC5737
-# (192.0.2.0/24), orgs/hostnames scrubbed to example.com. No real-target data.
-adapters/shodan/examples/findings.json
-adapters/shodan/examples/shodan_sample.jsonl
