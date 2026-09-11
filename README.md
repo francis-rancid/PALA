@@ -2,7 +2,7 @@
 
 <div align="center">
 <img src="https://img.shields.io/badge/Rust-stable-orange?style=flat-square&logo=rust&logoColor=white" alt="Rust stable">
-<img src="https://img.shields.io/badge/binary-957KB-brightgreen?style=flat-square" alt="957KB">
+<img src="https://img.shields.io/badge/binary-988KB-brightgreen?style=flat-square" alt="988KB">
 <img src="https://img.shields.io/badge/dependencies-none-brightgreen?style=flat-square" alt="No runtime deps">
 <a href="https://github.com/sshpie/PALA/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/sshpie/PALA/ci.yml?label=tests&style=flat-square" alt="tests"></a>
 <a href="https://github.com/sshpie/PALA/blob/main/LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue?style=flat-square" alt="license"></a>
@@ -12,7 +12,7 @@
 
 <div align="center">
 File carver and data recovery tool.<br>
-Recovers deleted files from any disk in a 957KB binary, because the 200MB recovery tool you just downloaded probably overwrote them.
+Recovers deleted files from any disk in a 988KB binary, because the 200MB recovery tool you just downloaded probably overwrote them.
 </div>
 
 ---
@@ -48,17 +48,21 @@ Works on Linux and Windows. Steal it. Make it better. Use it for reverse enginee
 
 ## Features
 
-- **Signature carving** - scans raw bytes for known file headers across 60 file types; works on any source with no filesystem metadata required
+- **Signature carving** - scans raw bytes for known file headers across 70+ file types; works on any source with no filesystem metadata required
+- **Firmware image recovery** - recovers SquashFS, JFFS2, UBIFS, U-Boot, FIT/DTB, and cramfs images with header-derived sizes; use `--triage-mode=firmware` for embedded/IoT targets
 - **Filesystem-aware inode recovery** (`--filesystem`) - walks live or partially-intact filesystem metadata for ext2/3/4, NTFS, FAT32, and APFS
 - **NTFS MFT stage-2** - parses `$DATA` run lists from carved MFT entries and assembles file content directly from cluster offsets; handles fragmented files
 - **FAT32 deleted-entry recovery** - recovers deleted files whose FAT chain has been cleared using contiguous cluster prediction
 - **Container unpacking** (`--container-depth`) - extracts member files from carved ZIP, DOCX, XLSX, PPTX, JAR, and APK archives
 - **Entropy classification** - classifies every 512-byte sector by Shannon entropy; `--skip-high-entropy` drops false-positive hits from encrypted volumes automatically
-- **Triage modes** - built-in presets for media, documents, executables, archives, email, windows, databases, memory, and filesystem types
+- **Triage modes** - built-in presets for media, documents, executables, archives, email, windows, databases, memory, filesystem, and firmware types
+- **Sector-aligned scan** (`--align=N`) - restricts matches to offsets that are multiples of N bytes; useful for block device scans where images are always block-aligned
 - **SHA256 deduplication** - no file is written twice regardless of which stage finds it
+- **Block device progress** - prints scan progress to stderr every 256MB when scanning raw block devices
+- **Precision size parsers** - FLAC, LiME, SquashFS, U-Boot, FIT/DTB, and cramfs files are carved to exact byte boundaries using header-derived sizes instead of static caps
 - **Metadata extraction** (`--meta`) - JPEG EXIF, PNG headers, ELF/PE fields, MFT cluster runs, SQLite schema
 - **Pipeline integration** - `--json` produces machine-readable output per finding; pipe directly into Claude Code, Codex, or any downstream tool
-- **957KB binary** - single statically linked executable; no installer, no runtime, no dependencies
+- **988KB binary** - single statically linked executable; no installer, no runtime, no dependencies
 
 ---
 
@@ -98,6 +102,12 @@ sudo pala /dev/sdb recovered/ -t jpeg,pdf
 # Filesystem-aware recovery - finds files by inode, not just magic bytes
 sudo pala /dev/sdb recovered/ --filesystem=auto
 
+# Firmware/embedded recovery - SquashFS, U-Boot, JFFS2, UBIFS, FIT, cramfs
+pala firmware.bin recovered/ --triage-mode=firmware
+
+# Sector-aligned scan - only match at 512-byte block boundaries
+sudo pala /dev/sdb recovered/ --align=512
+
 # AI-assisted recovery - pipe findings to Claude Code or jq
 pala disk.img out/ --json | jq '.findings[] | {ext, size, offset}'
 
@@ -125,9 +135,11 @@ Options:
       --max-size <bytes>    Maximum size per recovered file (default: type-specific)
       --min-size <bytes>    Minimum size per recovered file
   -n, --count <n>           Stop after recovering N files
+      --align <bytes>       Only match signatures at offsets that are multiples of N
+                            (e.g. --align=512 for block-aligned firmware images)
       --triage-mode <mode>  Limit types to a preset group:
                             media, documents, executables, archives,
-                            email, windows, databases, memory, filesystem
+                            email, windows, databases, memory, filesystem, firmware
       --filesystem <fs>     Filesystem-aware inode recovery:
                             auto, ext2, ntfs, apfs, fat32
       --skip-high-entropy   Skip candidates whose start sector has Shannon entropy > 7.5
@@ -152,7 +164,7 @@ Options:
 | mkv | mkv | MKV/WebM Video |
 | mp4 | mp4 | MP4/MOV Video |
 | mp3_id3 | mp3 | MP3 Audio (ID3) |
-| flac | flac | FLAC Audio |
+| flac | flac | FLAC Audio (header-derived size) |
 | aac | aac | AAC Audio (ADTS) |
 | pdf | pdf | PDF Document |
 | rtf | rtf | RTF Document |
@@ -178,7 +190,7 @@ Options:
 | fat32_fsinfo | fsinfo | FAT32 FSINFO Sector |
 | ext2_sb | sb | Ext2/3/4 Superblock |
 | ufs1_sb / ufs2_sb | ufs | UFS1/UFS2 Superblock |
-| lime | lime | Linux Memory Acquisition (LiME) |
+| lime | lime | Linux Memory Acquisition (LiME, header-derived size) |
 | hpak | hpak | HBGary Memory Acquisition (HPAK) |
 | elf | elf | ELF Binary |
 | pe | exe | PE/MZ Executable |
@@ -186,6 +198,13 @@ Options:
 | jng | jng | JNG Image |
 | luks | luks | LUKS Encrypted Volume Header |
 | bitlocker | bde | BitLocker Encrypted Volume |
+| squashfs_le / squashfs_be | sqsh | SquashFS Filesystem (v4, header-derived size) |
+| squashfs_le3 / squashfs_be3 | sqsh | SquashFS Filesystem (v3) |
+| jffs2_le / jffs2_be | jffs2 | JFFS2 Flash Filesystem |
+| ubifs | ubifs | UBIFS Flash Filesystem |
+| uboot | uboot | U-Boot Legacy Image (header-derived size) |
+| fit | itb | U-Boot FIT/DTB Image (header-derived size) |
+| cramfs_le / cramfs_be | cramfs | cramfs Filesystem (header-derived size) |
 
 ---
 
@@ -271,6 +290,7 @@ A corpus file contains additional signatures in PALA's binary format. The `seria
 - FAT32 stage-2 cluster prediction assumes unfragmented files; heavily fragmented volumes will produce incomplete recoveries
 - Files whose sectors have been overwritten by new data cannot be recovered regardless of method
 - Full-disk encryption: PALA cannot recover from an encrypted volume without the key; the entropy survey will report a high percentage of high-entropy sectors as an indicator
+- JFFS2 and UBIFS are variable-length by design and do not carry a total-size field; PALA uses a conservative static cap for these formats
 
 ---
 
@@ -291,7 +311,7 @@ Contributions welcome. The most useful additions are new file signatures. To add
 See [CONTRIBUTORS.md](CONTRIBUTORS.md).
 
 - **Nicholas Kloster** ([@sshpie](https://github.com/sshpie)) - author
-- **Claude Code** ([claude.ai/code](https://claude.ai/code)) - filesystem recovery stages, MFT run list parsing, FAT32 deleted-entry recovery, entropy classification, ZIP container depth, and test suite
+- **Claude Code** ([claude.ai/code](https://claude.ai/code)) - filesystem recovery stages, MFT run list parsing, FAT32 deleted-entry recovery, entropy classification, ZIP container depth, firmware signatures, FLAC/LiME/SquashFS/U-Boot/FIT/cramfs size parsers, sector-aligned scan mode, and test suite
 
 ---
 
