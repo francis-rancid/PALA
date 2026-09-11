@@ -1,0 +1,7 @@
+# Chapter 4 Memory Acquisition
+
+Memory acquisition (i.e., capturing, dumping*,* sampling) involves copying the contents of volatile memory to non-volatile storage. This is arguably one of the most important and precarious steps in the memory forensics process. Unfortunately, many analysts blindly trust acquisition tools without stopping to consider how those tools work or the types of problems they might encounter. As a result, they end up with corrupt memory images, destroyed evidence, and limited, if any, analysis capabilities. Although this chapter focuses on Windows memory acquisition, many of the concepts apply to other operating systems. You’ll also find Linux and Mac OS X–specific discussions in their respective chapters.
+
+## Preserving the Digital Environment
+
+Although the main focus of this book is analyzing the data stored in volatile memory, the success of that analysis often depends at the outset on the acquisition phase of the investigation. During this phase, the investigator must make important decisions about which data to collect and the best method for collecting that data. Fundamentally, memory acquisition is the procedure of copying the contents of physical memory to another storage device for preservation. This chapter highlights the important issues associated with accessing the data stored in physical memory and the considerations associated with writing the data to its destination. The particular methods and tools you use often depends on the goals of the investigation ...

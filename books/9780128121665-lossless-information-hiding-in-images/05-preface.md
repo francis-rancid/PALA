@@ -1,0 +1,3 @@
+# Preface
+
+The enormous popularity of the World Wide Web in the early 1990s demonstrated the commercial potential of offering multimedia resources through digital networks. Representation of media in digital format facilitates its access. Digital media includes text, digital audio, images, video, and software. The recent growth of networked multimedia systems has increased the need for the protection of digital media. Since commercial interests seek to use the digital networks to offer digital media for profit, it is particularly important for the protection and enforcement of intellectual property rights, and they have a strong interest in protecting their ownership rights. On the other hand, the age of digital multimedia has brought many advantages ...

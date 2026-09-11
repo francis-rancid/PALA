@@ -1,0 +1,30 @@
+{
+  "ourn": "urn:orm:book:9780128121665",
+  "identifier": "9780128121665",
+  "isbn": "9780128121665",
+  "url": "https://learning.oreilly.com/api/v2/epubs/urn:orm:book:9780128121665/",
+  "content_format": "book",
+  "publication_date": "2016-11-14",
+  "created_time": "2019-08-30T11:55:06.897733Z",
+  "last_modified_time": "2024-12-19T21:03:06.923362Z",
+  "title": "Lossless Information Hiding in Images",
+  "is_hidden": false,
+  "has_mathml": true,
+  "virtual_pages": 740,
+  "opf_unique_identifier_type": "p9780128121665",
+  "page_count": 432,
+  "total_running_time_secs": null,
+  "total_size": 101150802,
+  "descriptions": {
+    "text/html": "<span><p><i>Lossless Information Hiding in Images</i> introduces many state-of-the-art lossless hiding schemes, most of which come from the authors' publications in the past five years. After reading this book, readers will be able to immediately grasp the status, the typical algorithms, and the trend of the field of lossless information hiding.</p><p>Lossless information hiding is a technique that enables images to be authenticated and then restored to their original forms by removing the watermark and replacing overridden images. This book focuses on the lossless information hiding in our most popular media, images, classifying them in three categories, i.e., spatial domain based, transform domain based, and compressed domain based. Furthermore, the compressed domain based methods are classified into VQ based, BTC based, and JPEG/JPEG2000 based.</p><ul><li>Focuses specifically on lossless information hiding for images</li><li>Covers the most common visual medium, images, and the most common compression schemes, JPEG and JPEG 2000</li><li>Includes recent state-of-the-art techniques in the field of lossless image watermarking</li><li>Presents many lossless hiding schemes, most of which come from the authors' publications in the past five years</li></ul></span>",
+    "text/plain": "Lossless Information Hiding in Images introduces many state-of-the-art lossless hiding schemes, most of which come from the authors' publications in the past five years. After reading this book, readers will be able to immediately grasp the status, the typical algorithms, and the trend of the field of lossless information hiding. Lossless information hiding is a technique that enables images to be authenticated and then restored to their original forms by removing the watermark and replacing overridden images. This book focuses on the lossless information hiding in our most popular media, images, classifying them in three categories, i.e., spatial domain based, transform domain based, and compressed domain based. Furthermore, the compressed domain based methods are classified into VQ based, BTC based, and JPEG/JPEG2000 based. Focuses specifically on lossless information hiding for images Covers the most common visual medium, images, and the most common compression schemes, JPEG and JPEG 2000 Includes recent state-of-the-art techniques in the field of lossless image watermarking Presents many lossless hiding schemes, most of which come from the authors' publications in the past five years"
+  },
+  "spine": "https://learning.oreilly.com/api/v2/epubs/urn:orm:book:9780128121665/spine/",
+  "files": "https://learning.oreilly.com/api/v2/epubs/urn:orm:book:9780128121665/files/",
+  "table_of_contents": "https://learning.oreilly.com/api/v2/epubs/urn:orm:book:9780128121665/table-of-contents/",
+  "chapters": "https://learning.oreilly.com/api/v2/epub-chapters/?epub_identifier=urn:orm:book:9780128121665",
+  "tags": [],
+  "language": "en",
+  "resources": [],
+  "roughcut": false
+}

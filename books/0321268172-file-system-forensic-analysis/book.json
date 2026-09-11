@@ -1,0 +1,36 @@
+{
+  "ourn": "urn:orm:book:0321268172",
+  "identifier": "0321268172",
+  "isbn": "0321268172",
+  "url": "https://learning.oreilly.com/api/v2/epubs/urn:orm:book:0321268172/",
+  "content_format": "book",
+  "publication_date": "2005-03-17",
+  "created_time": "2019-09-02T16:22:00.930350Z",
+  "last_modified_time": "2024-09-24T21:49:49.313503Z",
+  "title": "File System Forensic Analysis",
+  "is_hidden": false,
+  "has_mathml": false,
+  "virtual_pages": 858,
+  "opf_unique_identifier_type": "p0321268172",
+  "page_count": 600,
+  "total_running_time_secs": null,
+  "total_size": 40302065,
+  "descriptions": {
+    "text/html": "<span><span><p><b>The Definitive Guide to File System\nAnalysis: Key Concepts and Hands-on Techniques</b></p><p>Most digital evidence is stored within the\ncomputer's file system, but understanding how file systems work is\none of the most technically challenging concepts for a digital\ninvestigator because there exists little documentation. Now,\nsecurity expert Brian Carrier has written the definitive reference\nfor everyone who wants to understand and be able to testify about\nhow file system analysis is performed.</p><p>Carrier begins with an overview of\ninvestigation and computer foundations and then gives an\nauthoritative, comprehensive, and illustrated overview of\ncontemporary volume and file systems: Crucial information for\ndiscovering hidden evidence, recovering deleted data, and\nvalidating your tools. Along the way, he describes data structures,\nanalyzes example disk images, provides advanced investigation\nscenarios, and uses today's most valuable open source file system\nanalysis tools—including tools he personally developed.\nCoverage includes</p><li><p>Preserving the digital crime scene and duplicating hard disks\nfor \"dead analysis\"</p></li><li><p>Identifying hidden data on a disk's Host Protected Area\n(HPA)</p></li><li><p>Reading source data: Direct versus BIOS access, dead versus\nlive acquisition, error handling, and more</p></li><li><p>Analyzing DOS, Apple, and GPT partitions; BSD disk labels; and\nSun Volume Table of Contents using key concepts, data structures,\nand specific techniques</p></li><li><p>Analyzing the contents of multiple disk volumes, such as RAID\nand disk spanning</p></li><li><p>Analyzing FAT, NTFS, Ext2, Ext3, UFS1, and UFS2 file systems\nusing key concepts, data structures, and specific techniques</p></li><li><p>Finding evidence: File metadata, recovery of deleted files,\ndata hiding locations, and more</p></li><li><p>Using The Sleuth Kit (TSK), Autopsy Forensic Browser, and\nrelated open source tools</p></li><p>When it comes to file system analysis, no\nother book offers this much detail or expertise. Whether you're a\ndigital forensics specialist, incident response team member, law\nenforcement officer, corporate security specialist, or auditor,\nthis book will become an indispensable resource for forensic\ninvestigations, no matter what analysis tools you use.</p></span></span>",
+    "text/plain": "The Definitive Guide to File System Analysis: Key Concepts and Hands-on Techniques Most digital evidence is stored within the computer's file system, but understanding how file systems work is one of the most technically challenging concepts for a digital investigator because there exists little documentation. Now, security expert Brian Carrier has written the definitive reference for everyone who wants to understand and be able to testify about how file system analysis is performed. Carrier begins with an overview of investigation and computer foundations and then gives an authoritative, comprehensive, and illustrated overview of contemporary volume and file systems: Crucial information for discovering hidden evidence, recovering deleted data, and validating your tools. Along the way, he describes data structures, analyzes example disk images, provides advanced investigation scenarios, and uses today's most valuable open source file system analysis tools—including tools he personally developed. Coverage includes Preserving the digital crime scene and duplicating hard disks for \"dead analysis\" Identifying hidden data on a disk's Host Protected Area (HPA) Reading source data: Direct versus BIOS access, dead versus live acquisition, error handling, and more Analyzing DOS, Apple, and GPT partitions; BSD disk labels; and Sun Volume Table of Contents using key concepts, data structures, and specific techniques Analyzing the contents of multiple disk volumes, such as RAID and disk spanning Analyzing FAT, NTFS, Ext2, Ext3, UFS1, and UFS2 file systems using key concepts, data structures, and specific techniques Finding evidence: File metadata, recovery of deleted files, data hiding locations, and more Using The Sleuth Kit (TSK), Autopsy Forensic Browser, and related open source tools When it comes to file system analysis, no other book offers this much detail or expertise. Whether you're a digital forensics specialist, incident response team member, law enforcement officer, corporate security specialist, or auditor, this book will become an indispensable resource for forensic investigations, no matter what analysis tools you use."
+  },
+  "spine": "https://learning.oreilly.com/api/v2/epubs/urn:orm:book:0321268172/spine/",
+  "files": "https://learning.oreilly.com/api/v2/epubs/urn:orm:book:0321268172/files/",
+  "table_of_contents": "https://learning.oreilly.com/api/v2/epubs/urn:orm:book:0321268172/table-of-contents/",
+  "chapters": "https://learning.oreilly.com/api/v2/epub-chapters/?epub_identifier=urn:orm:book:0321268172",
+  "tags": [],
+  "language": "en",
+  "resources": [
+    {
+      "url": "http://www.informit.com/title/9780321268174",
+      "type": "Publisher’s website for a specified work",
+      "description": "Purchase book"
+    }
+  ],
+  "roughcut": false
+}

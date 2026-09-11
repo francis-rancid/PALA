@@ -1,0 +1,7 @@
+# Chapter 30 Malicious Code and Rootkits
+
+This chapter covers a wide range of userland and kernel rootkit techniques used against Mac systems. If you have read the Windows and Linux sections of this book, some of these rootkit techniques might look familiar to you because Mac OS X must perform many of the same tasks as the other operating systems. On the other hand, Mac’s unique design lends itself to several interesting attack vectors against technologies such as IOKit and TrustedBSD. Throughout this chapter, we explain these facilities along with how rootkits, such as Rubilyn and Crisis, can subvert them and how memory forensics can detect the malicious modifications. We also cover analysis of some common Mac malware samples, such as OSX.GetShell and OSX.FkCodec, including how to enumerate both network and persistence artifacts.
+
+## Userland Rootkit Analysis
+
+In Chapter 29, you learned how to track a process’ activities such as opening files, making network connections, and loading shared libraries. Although these activities are certainly useful for detecting indirect artifacts created by rootkits, the upcoming section focuses on specific artifacts created by purely malicious actions. In particular, you’ll see examples of malware that hides in process memory (i.e. code injection) and alters call tables and executable instructions (API hooking) in process memory. These rootkits can control the view of system state presented to administrative and live forensic analysis tools that also ...

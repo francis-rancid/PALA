@@ -1,0 +1,3 @@
+### 4.5.5. Improved Joint Neighboring Coding–Based Scheme
+
+From the previous sections, we can see that MFCVQ, SMVQ, and JNC-based information hiding methods do not embed secret bits in the seed area. Furthermore, they perform the information hiding process in embeddable blocks one by one. In order to embed more secret bits, Lu et al.' presented an IJNC scheme [13]. In this scheme, the first strategy is to cancel the seed area and make all blocks embeddable. To reduce the coding bit rate, the second strategy is to perform the index coding process on each 2×2 index block rather than one by one. The main idea of the IJNC scheme is to first vector-quantize the cover image, obtaining an index table, and then divide the index table into nonoverlapping ...

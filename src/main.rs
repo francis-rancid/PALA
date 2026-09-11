@@ -770,6 +770,25 @@ fn fit_size(data: &[u8]) -> Option<usize> {
     Some(sz)
 }
 
+// LiME memory dump: scan segment headers (32 bytes each: magic+version+start+end+reserved).
+// Segments are written sequentially: header then data. Sum to find total extent.
+fn lime_size(data: &[u8]) -> Option<usize> {
+    const HDR: usize = 32;
+    const MAGIC: &[u8] = b"\x45\x4d\x69\x4c";
+    if data.len() < HDR || &data[..4] != MAGIC { return None; }
+    let mut off = 0usize;
+    loop {
+        if off + HDR > data.len() { break; }
+        if &data[off..off+4] != MAGIC { break; }
+        let start = u64::from_le_bytes(data[off+8..off+16].try_into().ok()?) as usize;
+        let end   = u64::from_le_bytes(data[off+16..off+24].try_into().ok()?) as usize;
+        if end < start { break; }
+        off += HDR + (end - start + 1);
+    }
+    if off == 0 { return None; }
+    Some(off.min(data.len()))
+}
+
 // cramfs: size at bytes 4-7 (same field for both LE and BE variants of cramfs).
 fn cramfs_size(data: &[u8]) -> Option<usize> {
     if data.len() < 8 { return None; }
@@ -1770,6 +1789,13 @@ fn scan_sig(src: &[u8], base_offset: usize, sig: &DynSig, sig_idx: usize, max_ov
             }
             Special::Cramfs => {
                 let trim = match cramfs_size(carved) {
+                    Some(n) if n <= carved.len() => { trunc = false; &carved[..n] }
+                    _ => carved,
+                };
+                (&sig.ext, &sig.desc, trim)
+            }
+            Special::LiME => {
+                let trim = match lime_size(carved) {
                     Some(n) if n <= carved.len() => { trunc = false; &carved[..n] }
                     _ => carved,
                 };

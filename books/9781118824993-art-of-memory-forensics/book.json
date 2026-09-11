@@ -1,0 +1,41 @@
+{
+  "ourn": "urn:orm:book:9781118824993",
+  "identifier": "9781118824993",
+  "isbn": "9781118825099",
+  "url": "https://learning.oreilly.com/api/v2/epubs/urn:orm:book:9781118824993/",
+  "content_format": "book",
+  "publication_date": "2014-07-28",
+  "created_time": "2019-08-30T22:39:15.877071Z",
+  "last_modified_time": "2025-04-30T20:00:59.472903Z",
+  "title": "The Art of Memory Forensics: Detecting Malware and Threats in Windows, Linux, and Mac Memory",
+  "is_hidden": false,
+  "has_mathml": false,
+  "virtual_pages": 1257,
+  "opf_unique_identifier_type": "pub-id",
+  "page_count": 912,
+  "total_running_time_secs": null,
+  "total_size": 12527410,
+  "descriptions": {
+    "text/html": "<span><span><span><span><span><span><p><b>Memory forensics provides cutting edge technology to help investigate digital attacks</b></p><p>Memory forensics is the art of analyzing computer memory (RAM) to solve digital crimes. As a follow-up to the best seller Malware Analyst's Cookbook, experts in the fields of malware, security, and digital forensics bring you a step-by-step guide to memory forensics—now the most sought after skill in the digital forensics and incident response fields.</p><p>Beginning with introductory concepts and moving toward the advanced, The Art of Memory Forensics: Detecting Malware and Threats in Windows, Linux, and Mac Memory is based on a five day training course that the authors have presented to hundreds of students. It is the only book on the market that focuses exclusively on memory forensics and how to deploy such techniques properly. Discover memory forensics techniques:</p><li><p>How volatile memory analysis improves digital investigations</p></li><li><p>Proper investigative steps for detecting stealth malware and advanced threats</p></li><li><p>How to use free, open source tools for conducting thorough memory forensics</p></li><li><p>Ways to acquire memory from suspect systems in a forensically sound manner</p></li><p>The next era of malware and security breaches are more sophisticated and targeted, and the volatile memory of a computer is often overlooked or destroyed as part of the incident response process. The Art of Memory Forensics explains the latest technological innovations in digital forensics to help bridge this gap. It covers the most popular and recently released versions of Windows, Linux, and Mac, including both the 32 and 64-bit editions.</p></span></span></span></span></span></span>",
+    "text/plain": "Memory forensics provides cutting edge technology to help investigate digital attacks Memory forensics is the art of analyzing computer memory (RAM) to solve digital crimes. As a follow-up to the best seller Malware Analyst's Cookbook, experts in the fields of malware, security, and digital forensics bring you a step-by-step guide to memory forensics—now the most sought after skill in the digital forensics and incident response fields. Beginning with introductory concepts and moving toward the advanced, The Art of Memory Forensics: Detecting Malware and Threats in Windows, Linux, and Mac Memory is based on a five day training course that the authors have presented to hundreds of students. It is the only book on the market that focuses exclusively on memory forensics and how to deploy such techniques properly. Discover memory forensics techniques: How volatile memory analysis improves digital investigations Proper investigative steps for detecting stealth malware and advanced threats How to use free, open source tools for conducting thorough memory forensics Ways to acquire memory from suspect systems in a forensically sound manner The next era of malware and security breaches are more sophisticated and targeted, and the volatile memory of a computer is often overlooked or destroyed as part of the incident response process. The Art of Memory Forensics explains the latest technological innovations in digital forensics to help bridge this gap. It covers the most popular and recently released versions of Windows, Linux, and Mac, including both the 32 and 64-bit editions."
+  },
+  "spine": "https://learning.oreilly.com/api/v2/epubs/urn:orm:book:9781118824993/spine/",
+  "files": "https://learning.oreilly.com/api/v2/epubs/urn:orm:book:9781118824993/files/",
+  "table_of_contents": "https://learning.oreilly.com/api/v2/epubs/urn:orm:book:9781118824993/table-of-contents/",
+  "chapters": "https://learning.oreilly.com/api/v2/epub-chapters/?epub_identifier=urn:orm:book:9781118824993",
+  "tags": [],
+  "language": "en",
+  "resources": [
+    {
+      "url": "http://www.wiley.com/remtitle.cgi?isbn=1118825098",
+      "type": "Publisher’s website for a specified work",
+      "description": "Purchase book"
+    },
+    {
+      "url": "http://bcs.wiley.com/he-bcs/Books?action=index&itemId=1118825098&bcsId=9063",
+      "type": "Unspecified, see website description",
+      "description": "Other"
+    }
+  ],
+  "roughcut": false
+}
