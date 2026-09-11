@@ -27,6 +27,8 @@ pub enum Special {
     Pcap, Pcapng, Der, Apfs,
     Iso9660,
     Luks,
+    SquashfsLe, SquashfsBe,
+    Uboot, Fit, Cramfs,
 }
 
 // Static signature table — zero-cost, embedded in binary.
@@ -133,24 +135,24 @@ static SIGS: &[Sig] = &[
     // No size field carvable without parsing object headers; use max cap.
     Sig { name:"systemd_journal", ext:"journal", magic:b"lpkshhrh", moff:0, em:None, em_last:false, em_trail:0, special:Special::None, max:256*MB, min:272, desc:"Systemd Binary Journal" },
     // ── Firmware images ───────────────────────────────────────────────────────
-    // SquashFS: sqsh (LE) or hsqs (BE) at byte 0; size at bytes 40-43 (LE u32).
-    Sig { name:"squashfs_le",  ext:"sqsh",  magic:b"sqsh",              moff:0, em:None, em_last:false, em_trail:0, special:Special::None, max:4*GB,   min:96,  desc:"SquashFS Filesystem (LE)" },
-    Sig { name:"squashfs_be",  ext:"sqsh",  magic:b"hsqs",              moff:0, em:None, em_last:false, em_trail:0, special:Special::None, max:4*GB,   min:96,  desc:"SquashFS Filesystem (BE)" },
-    // SquashFS older big-endian variants
-    Sig { name:"squashfs_le3", ext:"sqsh",  magic:b"qshs",              moff:0, em:None, em_last:false, em_trail:0, special:Special::None, max:4*GB,   min:96,  desc:"SquashFS Filesystem (LE v3)" },
-    Sig { name:"squashfs_be3", ext:"sqsh",  magic:b"shsq",              moff:0, em:None, em_last:false, em_trail:0, special:Special::None, max:4*GB,   min:96,  desc:"SquashFS Filesystem (BE v3)" },
+    // SquashFS: bytes_used at offset 40 (uint64 LE for sqsh, BE for hsqs).
+    Sig { name:"squashfs_le",  ext:"sqsh",  magic:b"sqsh",              moff:0, em:None, em_last:false, em_trail:0, special:Special::SquashfsLe, max:4*GB,   min:96,  desc:"SquashFS Filesystem (LE)" },
+    Sig { name:"squashfs_be",  ext:"sqsh",  magic:b"hsqs",              moff:0, em:None, em_last:false, em_trail:0, special:Special::SquashfsBe, max:4*GB,   min:96,  desc:"SquashFS Filesystem (BE)" },
+    // SquashFS older big-endian variants (pre-4.0; same layout, LE/BE per magic)
+    Sig { name:"squashfs_le3", ext:"sqsh",  magic:b"qshs",              moff:0, em:None, em_last:false, em_trail:0, special:Special::SquashfsLe, max:4*GB,   min:96,  desc:"SquashFS Filesystem (LE v3)" },
+    Sig { name:"squashfs_be3", ext:"sqsh",  magic:b"shsq",              moff:0, em:None, em_last:false, em_trail:0, special:Special::SquashfsBe, max:4*GB,   min:96,  desc:"SquashFS Filesystem (BE v3)" },
     // JFFS2: node magic 0x1985 (LE) or 0x8519 (BE) — header is 12 bytes per node.
     Sig { name:"jffs2_le",     ext:"jffs2", magic:b"\x85\x19",          moff:0, em:None, em_last:false, em_trail:0, special:Special::None, max:64*MB,  min:12,  desc:"JFFS2 Filesystem Image (LE)" },
     Sig { name:"jffs2_be",     ext:"jffs2", magic:b"\x19\x85",          moff:0, em:None, em_last:false, em_trail:0, special:Special::None, max:64*MB,  min:12,  desc:"JFFS2 Filesystem Image (BE)" },
     // UBIFS: superblock node magic 0x06101831 LE.
     Sig { name:"ubifs",        ext:"ubifs", magic:b"\x31\x18\x10\x06",  moff:0, em:None, em_last:false, em_trail:0, special:Special::None, max:512*MB, min:4096,desc:"UBIFS Filesystem Image" },
-    // U-Boot legacy image header: magic 0x27051956 BE.
-    Sig { name:"uboot",        ext:"uboot", magic:b"\x27\x05\x19\x56",  moff:0, em:None, em_last:false, em_trail:0, special:Special::None, max:64*MB,  min:64,  desc:"U-Boot Legacy Image" },
-    // U-Boot FIT (Flattened Image Tree): device tree blob magic 0xD00DFEED BE.
-    Sig { name:"fit",          ext:"itb",   magic:b"\xD0\x0D\xFE\xED",  moff:0, em:None, em_last:false, em_trail:0, special:Special::None, max:128*MB, min:4096,desc:"U-Boot FIT / Device Tree Blob" },
-    // cramfs: magic 0x28CD3D45 LE.
-    Sig { name:"cramfs_le",    ext:"cramfs",magic:b"\x45\x3d\xcd\x28",  moff:0, em:None, em_last:false, em_trail:0, special:Special::None, max:256*MB, min:76,  desc:"cramfs Filesystem (LE)" },
-    Sig { name:"cramfs_be",    ext:"cramfs",magic:b"\x28\xcd\x3d\x45",  moff:0, em:None, em_last:false, em_trail:0, special:Special::None, max:256*MB, min:76,  desc:"cramfs Filesystem (BE)" },
+    // U-Boot legacy image: data_size at bytes 12-15 (uint32 BE); total = 64 + data_size.
+    Sig { name:"uboot",        ext:"uboot", magic:b"\x27\x05\x19\x56",  moff:0, em:None, em_last:false, em_trail:0, special:Special::Uboot,  max:64*MB,  min:64,  desc:"U-Boot Legacy Image" },
+    // U-Boot FIT / Device Tree Blob: totalsize at bytes 4-7 (uint32 BE).
+    Sig { name:"fit",          ext:"itb",   magic:b"\xD0\x0D\xFE\xED",  moff:0, em:None, em_last:false, em_trail:0, special:Special::Fit,    max:128*MB, min:4096,desc:"U-Boot FIT / Device Tree Blob" },
+    // cramfs: filesystem size at bytes 4-7 (uint32 LE/BE).
+    Sig { name:"cramfs_le",    ext:"cramfs",magic:b"\x45\x3d\xcd\x28",  moff:0, em:None, em_last:false, em_trail:0, special:Special::Cramfs, max:256*MB, min:76,  desc:"cramfs Filesystem (LE)" },
+    Sig { name:"cramfs_be",    ext:"cramfs",magic:b"\x28\xcd\x3d\x45",  moff:0, em:None, em_last:false, em_trail:0, special:Special::Cramfs, max:256*MB, min:76,  desc:"cramfs Filesystem (BE)" },
 ];
 
 // ─── Runtime signature (static or corpus-loaded) ──────────────────────────────
@@ -736,6 +738,46 @@ fn flac_size(data: &[u8]) -> Option<usize> {
     } else {
         None // estimate >= window size; let max cap stand
     }
+}
+
+// SquashFS v4 header: bytes_used at offset 40 (uint64).
+fn squashfs_size_le(data: &[u8]) -> Option<usize> {
+    if data.len() < 48 { return None; }
+    let sz = u64::from_le_bytes(data[40..48].try_into().ok()?) as usize;
+    if sz < 96 || sz > 4 * GB { return None; }
+    Some(sz)
+}
+fn squashfs_size_be(data: &[u8]) -> Option<usize> {
+    if data.len() < 48 { return None; }
+    let sz = u64::from_be_bytes(data[40..48].try_into().ok()?) as usize;
+    if sz < 96 || sz > 4 * GB { return None; }
+    Some(sz)
+}
+
+// U-Boot legacy image: 64-byte header; data_size at bytes 12-15 (uint32 BE).
+fn uboot_size(data: &[u8]) -> Option<usize> {
+    if data.len() < 64 { return None; }
+    let data_sz = u32::from_be_bytes(data[12..16].try_into().ok()?) as usize;
+    if data_sz == 0 { return None; }
+    64usize.checked_add(data_sz)
+}
+
+// FDT/FIT blob: totalsize at bytes 4-7 (uint32 BE).
+fn fit_size(data: &[u8]) -> Option<usize> {
+    if data.len() < 8 { return None; }
+    let sz = u32::from_be_bytes(data[4..8].try_into().ok()?) as usize;
+    if sz < 8 { return None; }
+    Some(sz)
+}
+
+// cramfs: size at bytes 4-7 (same field for both LE and BE variants of cramfs).
+fn cramfs_size(data: &[u8]) -> Option<usize> {
+    if data.len() < 8 { return None; }
+    let sz_le = u32::from_le_bytes(data[4..8].try_into().ok()?) as usize;
+    if sz_le >= 76 && sz_le <= 256 * MB { return Some(sz_le); }
+    let sz_be = u32::from_be_bytes(data[4..8].try_into().ok()?) as usize;
+    if sz_be >= 76 && sz_be <= 256 * MB { return Some(sz_be); }
+    None
 }
 
 // ─── Subtype detection ────────────────────────────────────────────────────────
@@ -1693,6 +1735,41 @@ fn scan_sig(src: &[u8], base_offset: usize, sig: &DynSig, sig_idx: usize, max_ov
             }
             Special::Iso9660 => {
                 let trim = match iso9660_size(carved) {
+                    Some(n) if n <= carved.len() => { trunc = false; &carved[..n] }
+                    _ => carved,
+                };
+                (&sig.ext, &sig.desc, trim)
+            }
+            Special::SquashfsLe => {
+                let trim = match squashfs_size_le(carved) {
+                    Some(n) if n <= carved.len() => { trunc = false; &carved[..n] }
+                    _ => carved,
+                };
+                (&sig.ext, &sig.desc, trim)
+            }
+            Special::SquashfsBe => {
+                let trim = match squashfs_size_be(carved) {
+                    Some(n) if n <= carved.len() => { trunc = false; &carved[..n] }
+                    _ => carved,
+                };
+                (&sig.ext, &sig.desc, trim)
+            }
+            Special::Uboot => {
+                let trim = match uboot_size(carved) {
+                    Some(n) if n <= carved.len() => { trunc = false; &carved[..n] }
+                    _ => carved,
+                };
+                (&sig.ext, &sig.desc, trim)
+            }
+            Special::Fit => {
+                let trim = match fit_size(carved) {
+                    Some(n) if n <= carved.len() => { trunc = false; &carved[..n] }
+                    _ => carved,
+                };
+                (&sig.ext, &sig.desc, trim)
+            }
+            Special::Cramfs => {
+                let trim = match cramfs_size(carved) {
                     Some(n) if n <= carved.len() => { trunc = false; &carved[..n] }
                     _ => carved,
                 };
