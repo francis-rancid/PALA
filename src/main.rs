@@ -23,7 +23,7 @@ pub enum Special {
     None, Riff, Zip, Mp4, Tiff, Sqlite, Jpeg, Gz, Aac, Bmp,
     Regf, Dex, Pf, Thumbcache,
     NtfsMft, Fat32Fsinfo, Ext2Sb, UfsSb, LiME, Elf, Pe, PageDump, Png,
-    Mkv, Sevenz, Ole2, Mp3, Rar,
+    Mkv, Sevenz, Ole2, Mp3, Flac, Rar,
     Pcap, Pcapng, Der, Apfs,
     Iso9660,
     Luks,
@@ -59,7 +59,7 @@ static SIGS: &[Sig] = &[
     Sig { name:"mkv",        ext:"mkv",    magic:b"\x1a\x45\xdf\xa3",             moff:0, em:None,                     em_last:false, em_trail:0, special:Special::Mkv,        max:8*GB,    min:0,    desc:"MKV/WebM Video" },
     Sig { name:"mp4",        ext:"mp4",    magic:b"ftyp",                         moff:4, em:None,                     em_last:false, em_trail:0, special:Special::Mp4,        max:8*GB,    min:0,    desc:"MP4/MOV Video" },
     Sig { name:"mp3_id3",    ext:"mp3",    magic:b"ID3",                          moff:0, em:None,                     em_last:false, em_trail:0, special:Special::Mp3,        max:300*MB,  min:0,    desc:"MP3 Audio (ID3)" },
-    Sig { name:"flac",       ext:"flac",   magic:b"fLaC",                         moff:0, em:None,                     em_last:false, em_trail:0, special:Special::None,       max:500*MB,  min:0,    desc:"FLAC Audio" },
+    Sig { name:"flac",       ext:"flac",   magic:b"fLaC",                         moff:0, em:None,                     em_last:false, em_trail:0, special:Special::Flac,       max:500*MB,  min:0,    desc:"FLAC Audio" },
     Sig { name:"aac",        ext:"aac",    magic:b"\xFF\xF1",                     moff:0, em:None,                     em_last:false, em_trail:0, special:Special::Aac,        max:200*MB,  min:0,    desc:"AAC Audio (ADTS)" },
     // ── Documents ─────────────────────────────────────────────────────────────
     Sig { name:"pdf",        ext:"pdf",    magic:b"%PDF-",                        moff:0, em:Some(b"%%EOF"),           em_last:true,  em_trail:2, special:Special::None,       max:500*MB,  min:0,    desc:"PDF Document" },
@@ -132,6 +132,25 @@ static SIGS: &[Sig] = &[
     // Systemd binary journal: magic "lpkshhrh" (8 bytes, lowercase) at offset 0.
     // No size field carvable without parsing object headers; use max cap.
     Sig { name:"systemd_journal", ext:"journal", magic:b"lpkshhrh", moff:0, em:None, em_last:false, em_trail:0, special:Special::None, max:256*MB, min:272, desc:"Systemd Binary Journal" },
+    // ── Firmware images ───────────────────────────────────────────────────────
+    // SquashFS: sqsh (LE) or hsqs (BE) at byte 0; size at bytes 40-43 (LE u32).
+    Sig { name:"squashfs_le",  ext:"sqsh",  magic:b"sqsh",              moff:0, em:None, em_last:false, em_trail:0, special:Special::None, max:4*GB,   min:96,  desc:"SquashFS Filesystem (LE)" },
+    Sig { name:"squashfs_be",  ext:"sqsh",  magic:b"hsqs",              moff:0, em:None, em_last:false, em_trail:0, special:Special::None, max:4*GB,   min:96,  desc:"SquashFS Filesystem (BE)" },
+    // SquashFS older big-endian variants
+    Sig { name:"squashfs_le3", ext:"sqsh",  magic:b"qshs",              moff:0, em:None, em_last:false, em_trail:0, special:Special::None, max:4*GB,   min:96,  desc:"SquashFS Filesystem (LE v3)" },
+    Sig { name:"squashfs_be3", ext:"sqsh",  magic:b"shsq",              moff:0, em:None, em_last:false, em_trail:0, special:Special::None, max:4*GB,   min:96,  desc:"SquashFS Filesystem (BE v3)" },
+    // JFFS2: node magic 0x1985 (LE) or 0x8519 (BE) — header is 12 bytes per node.
+    Sig { name:"jffs2_le",     ext:"jffs2", magic:b"\x85\x19",          moff:0, em:None, em_last:false, em_trail:0, special:Special::None, max:64*MB,  min:12,  desc:"JFFS2 Filesystem Image (LE)" },
+    Sig { name:"jffs2_be",     ext:"jffs2", magic:b"\x19\x85",          moff:0, em:None, em_last:false, em_trail:0, special:Special::None, max:64*MB,  min:12,  desc:"JFFS2 Filesystem Image (BE)" },
+    // UBIFS: superblock node magic 0x06101831 LE.
+    Sig { name:"ubifs",        ext:"ubifs", magic:b"\x31\x18\x10\x06",  moff:0, em:None, em_last:false, em_trail:0, special:Special::None, max:512*MB, min:4096,desc:"UBIFS Filesystem Image" },
+    // U-Boot legacy image header: magic 0x27051956 BE.
+    Sig { name:"uboot",        ext:"uboot", magic:b"\x27\x05\x19\x56",  moff:0, em:None, em_last:false, em_trail:0, special:Special::None, max:64*MB,  min:64,  desc:"U-Boot Legacy Image" },
+    // U-Boot FIT (Flattened Image Tree): device tree blob magic 0xD00DFEED BE.
+    Sig { name:"fit",          ext:"itb",   magic:b"\xD0\x0D\xFE\xED",  moff:0, em:None, em_last:false, em_trail:0, special:Special::None, max:128*MB, min:4096,desc:"U-Boot FIT / Device Tree Blob" },
+    // cramfs: magic 0x28CD3D45 LE.
+    Sig { name:"cramfs_le",    ext:"cramfs",magic:b"\x45\x3d\xcd\x28",  moff:0, em:None, em_last:false, em_trail:0, special:Special::None, max:256*MB, min:76,  desc:"cramfs Filesystem (LE)" },
+    Sig { name:"cramfs_be",    ext:"cramfs",magic:b"\x28\xcd\x3d\x45",  moff:0, em:None, em_last:false, em_trail:0, special:Special::None, max:256*MB, min:76,  desc:"cramfs Filesystem (BE)" },
 ];
 
 // ─── Runtime signature (static or corpus-loaded) ──────────────────────────────
@@ -657,6 +676,66 @@ fn iso9660_size(data: &[u8]) -> Option<usize> {
     let blksz = u16::from_le_bytes(data[PVD+128..PVD+130].try_into().ok()?) as usize;
     if space == 0 || blksz == 0 || !blksz.is_power_of_two() || blksz > 32768 { return None; }
     space.checked_mul(blksz)
+}
+
+// Walk FLAC METADATA_BLOCK chain; use STREAMINFO total_samples to bound audio size.
+// FLAC compressed audio is always <= uncompressed PCM — use that as the upper bound.
+fn flac_size(data: &[u8]) -> Option<usize> {
+    if data.len() < 8 || &data[..4] != b"fLaC" { return None; }
+    let mut off = 4usize;
+    let mut total_samples    = 0u64;
+    let mut channels: u8     = 0;
+    let mut bits_per_sample  = 0u8;
+
+    loop {
+        if off + 4 > data.len() { return None; }
+        let hdr       = data[off];
+        let last      = hdr & 0x80 != 0;
+        let block_type= hdr & 0x7F;
+        let block_len = ((data[off+1] as usize) << 16)
+                      | ((data[off+2] as usize) << 8)
+                      |  (data[off+3] as usize);
+        if block_len > 16 * MB { return None; }
+
+        if block_type == 0 && off + 4 + 18 <= data.len() {
+            // STREAMINFO bit-field layout (big-endian bitstream):
+            //   [0:15]   min blocksize
+            //   [16:31]  max blocksize
+            //   [32:55]  min framesize (24 bits)
+            //   [56:79]  max framesize (24 bits)
+            //   [80:99]  sample_rate (20 bits)
+            //   [100:102] channels - 1 (3 bits)
+            //   [103:107] bits_per_sample - 1 (5 bits)
+            //   [108:143] total_samples (36 bits)
+            let si = &data[off+4..];
+            channels        = ((si[12] & 0x0E) >> 1) + 1;
+            bits_per_sample = (((si[12] & 0x01) << 4) | ((si[13] >> 4) & 0x0F)) + 1;
+            total_samples   = ((si[13] & 0x0F) as u64) << 32
+                            | ((si[14] as u64) << 24)
+                            | ((si[15] as u64) << 16)
+                            | ((si[16] as u64) << 8)
+                            |  (si[17] as u64);
+        }
+
+        off = match off.checked_add(4 + block_len) {
+            Some(n) if n <= data.len() => n,
+            _ => return None,
+        };
+        if last { break; }
+    }
+
+    // off = first audio frame byte; estimate total file size
+    if total_samples == 0 || channels == 0 || bits_per_sample == 0 { return None; }
+    let bytes_per_sample = ((bits_per_sample as u64 + 7) / 8) as u64;
+    let uncompressed = total_samples
+        .saturating_mul(channels as u64)
+        .saturating_mul(bytes_per_sample);
+    let total = (off as u64).saturating_add(uncompressed);
+    if total < data.len() as u64 {
+        Some(total as usize)
+    } else {
+        None // estimate >= window size; let max cap stand
+    }
 }
 
 // ─── Subtype detection ────────────────────────────────────────────────────────
@@ -1388,7 +1467,8 @@ struct Candidate {
 
 // Scan `src` for one signature; return all validated, trimmed candidates.
 // Does NOT touch the filesystem or check the seen-set — both happen in the serial phase.
-fn scan_sig(src: &[u8], base_offset: usize, sig: &DynSig, sig_idx: usize, max_override: Option<usize>) -> Vec<Candidate> {
+// align_bytes > 0: skip matches whose global byte offset is not a multiple of align_bytes.
+fn scan_sig(src: &[u8], base_offset: usize, sig: &DynSig, sig_idx: usize, max_override: Option<usize>, align_bytes: usize) -> Vec<Candidate> {
     let finder = memmem::Finder::new(&sig.magic);
     let min    = sig.min.max(DEFAULT_MIN);
     let max    = max_override.unwrap_or(sig.max);
@@ -1401,6 +1481,8 @@ fn scan_sig(src: &[u8], base_offset: usize, sig: &DynSig, sig_idx: usize, max_ov
 
         if idx < sig.moff { continue; }
         let start = idx - sig.moff;
+
+        if align_bytes > 0 && (base_offset + start) % align_bytes != 0 { continue; }
 
         let wend = (start + max).min(src.len());
         let data = &src[start..wend];
@@ -1569,6 +1651,13 @@ fn scan_sig(src: &[u8], base_offset: usize, sig: &DynSig, sig_idx: usize, max_ov
             }
             Special::Mp3 => {
                 let trim = match mp3_id3_size(carved) {
+                    Some(n) if n <= carved.len() => { trunc = false; &carved[..n] }
+                    _ => carved,
+                };
+                (&sig.ext, &sig.desc, trim)
+            }
+            Special::Flac => {
+                let trim = match flac_size(carved) {
                     Some(n) if n <= carved.len() => { trunc = false; &carved[..n] }
                     _ => carved,
                 };
@@ -1797,7 +1886,7 @@ fn read_checkpoint(state_path: &Path) -> Option<PalaState> {
 // Scan `src` for all signatures, write recovered files to `outdir`.
 // `base_offset`: byte offset of `src[0]` within the original source — used to compute
 // globally-unique offsets when called repeatedly on overlapping chunks.
-pub fn carve(src: &[u8], base_offset: usize, outdir: &Path, sigs: &[DynSig], quiet: bool, emit_meta: bool, max_override: Option<usize>, frag_gap: usize, state: &mut CarveState) -> Result<Vec<Finding>> {
+pub fn carve(src: &[u8], base_offset: usize, outdir: &Path, sigs: &[DynSig], quiet: bool, emit_meta: bool, max_override: Option<usize>, frag_gap: usize, align_bytes: usize, state: &mut CarveState) -> Result<Vec<Finding>> {
     fs::create_dir_all(outdir)?;
 
     let total     = sigs.len();
@@ -1810,7 +1899,7 @@ pub fn carve(src: &[u8], base_offset: usize, outdir: &Path, sigs: &[DynSig], qui
         .par_iter()
         .enumerate()
         .flat_map(|(si, sig)| {
-            let hits = scan_sig(src, base_offset, sig, si, max_override);
+            let hits = scan_sig(src, base_offset, sig, si, max_override, align_bytes);
             if !quiet {
                 let done = completed.fetch_add(1, Ordering::Relaxed) + 1;
                 eprintln!("  [{:>2}/{}] {}... {} hit(s)", done, total, sig.name, hits.len());
@@ -1983,7 +2072,7 @@ fn read_chunk_resilient(file: &File, buf: &mut [u8], offset: u64, degraded_delay
 fn carve_device(file: &File, size: usize, outdir: &Path, sigs: &[DynSig], quiet: bool,
                 emit_meta: bool, max_override: Option<usize>, frag_gap: usize,
                 state_path: Option<&Path>, src_path: &str,
-                degraded_delay_us: u64,
+                degraded_delay_us: u64, align_bytes: usize,
                 state: &mut CarveState) -> Result<(Vec<Finding>, u64)> {
     const CHUNK:   usize = 256 * MB;
     const OVERLAP: usize =  64 * MB;
@@ -2021,7 +2110,7 @@ fn carve_device(file: &File, size: usize, outdir: &Path, sigs: &[DynSig], quiet:
 
         // carve() deduplicates via state.seen (global offsets), so any finding already
         // emitted from a previous chunk is silently skipped here.
-        let findings = carve(&buf[..window_size], chunk_start, outdir, sigs, quiet, emit_meta, max_override, frag_gap, state)?;
+        let findings = carve(&buf[..window_size], chunk_start, outdir, sigs, quiet, emit_meta, max_override, frag_gap, align_bytes, state)?;
         for f in findings {
             if f.offset < emit_end || chunk_end == size {
                 state.findings_so_far += 1;
@@ -2030,6 +2119,13 @@ fn carve_device(file: &File, size: usize, outdir: &Path, sigs: &[DynSig], quiet:
         }
 
         state.completed_chunks += 1;
+
+        if !quiet {
+            let pct = chunk_end * 100 / size;
+            eprintln!("pala: progress — {}%  {}  of  {}  ({} found)",
+                      pct, human_size(chunk_end), human_size(size), state.findings_so_far);
+            eprintln!();
+        }
 
         // Checkpoint: write state after each chunk so a crashed run can resume here.
         // state.completed_chunks was just incremented above to N+1; storing it directly
@@ -2718,6 +2814,7 @@ fn usage() {
     eprintln!("      --filesystem=FS  Filesystem-assisted recovery via TSK (requires sleuthkit: fls + icat)");
     eprintln!("                       FS: ext2|ext3|ext4|fat12|fat16|fat32|ntfs|hfs|ufs1|ufs2|auto");
     eprintln!("                       Runs inode-map phase first, then sig scan deduplicates by SHA256");
+    eprintln!("      --align=N        Only recover files aligned to N bytes (e.g. 512, 4096); useful for block devices");
     eprintln!("  -h, --help           Show this help\n");
     eprintln!("Examples:");
     eprintln!("  pala disk.img /mnt/usb/recovered/");
@@ -2745,6 +2842,7 @@ fn main() -> Result<()> {
     let mut skip_high_entropy = false;          // --skip-high-entropy: skip high-H start sectors
     let mut container_depth   = false;          // --container-depth: expand ZIP/DOCX/XLSX members
     let mut fat32_stage2      = true;           // --no-fat32-stage2 to disable; on by default
+    let mut align_bytes:usize = 0;              // --align=N: only emit matches at N-byte boundaries
 
     let mut i = 1;
     while i < args.len() {
@@ -2806,7 +2904,7 @@ fn main() -> Result<()> {
             }
             "--triage-mode" => {
                 i += 1;
-                if i >= args.len() { anyhow::bail!("--triage-mode requires documents|databases|media|forensic"); }
+                if i >= args.len() { anyhow::bail!("--triage-mode requires documents|databases|media|forensic|firmware"); }
                 triage_mode = Some(args[i].clone());
             }
             a if a.starts_with("--triage-mode=") => {
@@ -2823,6 +2921,18 @@ fn main() -> Result<()> {
             "--skip-high-entropy" => skip_high_entropy = true,
             "--container-depth"   => container_depth   = true,
             "--no-fat32-stage2"   => fat32_stage2      = false,
+            "--align" => {
+                i += 1;
+                if i >= args.len() { anyhow::bail!("--align requires a value in bytes"); }
+                align_bytes = args[i].parse::<usize>()
+                    .with_context(|| format!("invalid --align: {}", args[i]))?;
+                if align_bytes == 0 { anyhow::bail!("--align value must be > 0"); }
+            }
+            a if a.starts_with("--align=") => {
+                align_bytes = a[8..].parse::<usize>()
+                    .with_context(|| format!("invalid --align: {}", &a[8..]))?;
+                if align_bytes == 0 { anyhow::bail!("--align value must be > 0"); }
+            }
             a => {
                 if src.is_none()      { src = Some(a.to_string()); }
                 else if out.is_none() { out = Some(a.to_string()); }
@@ -2841,7 +2951,10 @@ fn main() -> Result<()> {
                              "psd", "riff", "mkv", "mp4", "mp3_id3", "flac", "aac"],
             "forensic"  => &["evtx", "regf", "lnk", "pf", "thumbcache", "hibr", "pagedump",
                              "ntfs_mft", "fat32_fsinfo", "lime"],
-            other => anyhow::bail!("unknown --triage-mode: {other}; choose documents|databases|media|forensic"),
+            "firmware"  => &["squashfs_le", "squashfs_be", "squashfs_le3", "squashfs_be3",
+                             "jffs2_le", "jffs2_be", "ubifs", "uboot", "fit",
+                             "cramfs_le", "cramfs_be", "elf"],
+            other => anyhow::bail!("unknown --triage-mode: {other}; choose documents|databases|media|forensic|firmware"),
         };
         let names: Vec<String> = preset.iter().map(|s| s.to_string()).collect();
         types = Some(match types.take() {
@@ -2988,7 +3101,7 @@ fn main() -> Result<()> {
         }
         let (findings, bad) = carve_device(&file, size, &outdir, &sigs, quiet, emit_meta,
                                            max_override, frag_gap, Some(&state_path), &src_path,
-                                           degraded_ms * 1000, &mut state)?;
+                                           degraded_ms * 1000, align_bytes, &mut state)?;
         total_bad_sectors = bad;
         if !quiet && bad > 0 {
             eprintln!();
@@ -2998,7 +3111,7 @@ fn main() -> Result<()> {
     } else {
         let mmap = unsafe { MmapOptions::new().len(size).map(&file) }
             .with_context(|| format!("mmap {src_path}"))?;
-        let findings = carve(&mmap, 0, &outdir, &sigs, quiet, emit_meta, max_override, frag_gap, &mut state)?;
+        let findings = carve(&mmap, 0, &outdir, &sigs, quiet, emit_meta, max_override, frag_gap, align_bytes, &mut state)?;
 
         // ── Phase C: entropy survey ───────────────────────────────────────────
         let (ez, eh, et) = entropy_survey(&mmap);
@@ -3244,7 +3357,7 @@ mod tests {
         let mut state = CarveState::new();
         state.seen_sha256.insert(sha); // pre-register as if inode phase wrote it
 
-        let findings = carve(&img, 0, &td, &sigs, true, false, None, 0, &mut state).unwrap();
+        let findings = carve(&img, 0, &td, &sigs, true, false, None, 0, 0, &mut state).unwrap();
         let _ = std::fs::remove_dir_all(&td);
         assert_eq!(findings.len(), 0, "sha256 dedup should skip the already-written JPEG");
     }
