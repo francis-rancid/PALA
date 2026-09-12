@@ -1,68 +1,223 @@
-<h1 align="center">PALA</h1>
-
 <div align="center">
+
+<h1>PALA</h1>
+
+<p><strong>File carver and data recovery. 988KB. No runtime dependencies.</strong></p>
+
+<p>
 <img src="https://img.shields.io/badge/Rust-stable-orange?style=flat-square&logo=rust&logoColor=white" alt="Rust stable">
 <img src="https://img.shields.io/badge/binary-988KB-brightgreen?style=flat-square" alt="988KB">
 <img src="https://img.shields.io/badge/dependencies-none-brightgreen?style=flat-square" alt="No runtime deps">
 <a href="https://github.com/francis-rancid/PALA/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/francis-rancid/PALA/ci.yml?label=tests&style=flat-square" alt="tests"></a>
 <a href="https://github.com/francis-rancid/PALA/blob/main/LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue?style=flat-square" alt="license"></a>
+</p>
+
+<p>
+<a href="#features--benefits">Features & Benefits</a> &nbsp;|&nbsp;
+<a href="#the-pala-difference">What Makes It Different</a> &nbsp;|&nbsp;
+<a href="#use-cases">Use Cases</a> &nbsp;|&nbsp;
+<a href="#claude-code-integration">Claude Code</a> &nbsp;|&nbsp;
+<a href="#installation">Installation</a>
+</p>
+
 </div>
 
-<br />
+---
 
-<div align="center">
-File carver and data recovery tool.<br>
-Recovers deleted files from any disk in a 988KB binary, because the 200MB recovery tool you just downloaded probably overwrote them.
-</div>
+## Features & Benefits
+
+<img src="assets/accent.svg">
+
+**Smallest full-featured file carver available.**
+
+The 200MB recovery tool you just downloaded probably overwrote the files you are trying to recover. PALA is 988KB. Drop it on a USB stick. Run it without touching a single byte on the target drive.
+
+Three recovery stages run in sequence. Each deduplicates against all prior stages by SHA256 - nothing is written twice.
+
+<table>
+<tr>
+<td width="33%" valign="top">
+<strong>Stage 1 - Signature Carving</strong><br><br>
+Scans raw bytes for known file headers across 70+ types. No filesystem metadata required. Works on formatted, corrupted, or wiped drives.
+</td>
+<td width="33%" valign="top">
+<strong>Stage 2 - Inode Recovery</strong><br><br>
+Walks live filesystem metadata for ext2/3/4, NTFS, FAT32, and APFS. Recovers files whose directory entries still exist even after deletion.
+</td>
+<td width="33%" valign="top">
+<strong>Stage 3 - Cluster Analysis</strong><br><br>
+Parses NTFS MFT run lists and FAT32 deleted entries from raw cluster offsets. Recovers fragmented files that carving alone misses.
+</td>
+</tr>
+</table>
+
+- **70+ file types** across media, documents, archives, forensic artifacts, firmware images, and memory captures
+- **Precision size parsers** for FLAC, LiME, SquashFS, U-Boot, FIT, and cramfs - header-derived exact boundaries, no static caps
+- **Entropy classification** identifies and optionally skips encrypted sectors to eliminate false-positive hits
+- **Container unpacking** (`--container-depth`) extracts member files from carved ZIP, DOCX, XLSX, JAR, and APK archives
+- **Sector-aligned scan** (`--align=N`) restricts matches to block-aligned offsets for raw block device forensics
+- **Structured JSON output** (`--json`) for automation, pipelines, and AI analysis
 
 ---
 
-## Table of Contents
+## The PALA Difference
 
-1. [Overview](#overview)
-2. [Features](#features)
-3. [Installation](#installation)
-4. [Quick Start](#quick-start)
-5. [Usage](#usage)
-6. [Supported Types](#supported-types)
-7. [JSON Output](#json-output)
-8. [Custom Signatures](#custom-signatures)
-9. [Known Issues](#known-issues)
-10. [Getting Help](#getting-help)
-11. [Contributing](#contributing)
-12. [Credits](#credits)
+<img src="assets/accent.svg">
+
+<table>
+<tr>
+<td width="25%" align="center" valign="top">
+<br>
+<strong>Carving Without Compromise &raquo;</strong>
+<br><br>
+988KB static binary. No installer. No runtime.
+<br><br>
+
+- Fits on any USB stick
+- Zero writes to the source drive
+- Standard recovery tools are 200MB or more - the same space your deleted files occupy
+
+</td>
+<td width="25%" align="center" valign="top">
+<br>
+<strong>Precision Size Parsers &raquo;</strong>
+<br><br>
+Static caps produce garbage tails and truncated recoveries.
+<br><br>
+
+- FLAC: walks METADATA_BLOCK chain, reads STREAMINFO total_samples
+- LiME: reads segment headers to compute exact dump extent
+- SquashFS, U-Boot, FIT, cramfs: all header-derived
+
+</td>
+<td width="25%" align="center" valign="top">
+<br>
+<strong>Three-Stage Recovery &raquo;</strong>
+<br><br>
+Carving alone misses fragmented files.
+<br><br>
+
+- NTFS MFT $DATA run list parsing assembles files from non-contiguous clusters
+- FAT32 deleted-entry recovery uses contiguous cluster prediction
+- All three stages deduplicate against each other
+
+</td>
+<td width="25%" align="center" valign="top">
+<br>
+<strong>Pipeline Ready &raquo;</strong>
+<br><br>
+<code>--json</code> writes structured findings to stdout.
+<br><br>
+
+- Per-finding: offset, type, size, path, quality, sha256
+- Pipe directly into Claude Code, jq, or any downstream processor
+- Entire recovery session stays in one terminal
+
+</td>
+</tr>
+</table>
 
 ---
 
-## Overview
+## Use Cases
 
-Most recovery tools are 200MB or more. That is 200MB of crucial disk space - the same space your deleted files still occupy. PALA is a single static binary with no runtime deps and no installer. Drop it on a USB stick, plug it in, and run it without writing a single byte to the target drive.
+<img src="assets/accent.svg">
 
-Claude Code accidentally deleted something important? Run PALA against the disk, pipe the JSON output back to your AI, and let it tell you exactly what it found and which file is the one you lost. The whole recovery session stays inside your terminal, inside your conversation, without switching tools or losing context.
+Runs on Linux and Windows. Works on disk images, raw block devices, and firmware flash dumps.
 
-PALA runs three recovery stages in sequence. Each stage deduplicates against all prior stages by SHA256 - nothing is written twice.
-
-Works on Linux and Windows. Steal it. Make it better. Use it for reverse engineering.
+<table>
+<tr>
+<td width="33%" align="center" valign="top">
+<br>
+<strong>INCIDENT RESPONSE</strong>
+<br><br>
+Recover deleted evidence from seized drives without installing software on the target system. Run from USB with no footprint on the source.
+<br><br>
+</td>
+<td width="33%" align="center" valign="top">
+<br>
+<strong>FORENSIC ANALYSIS</strong>
+<br><br>
+Reconstruct files from damaged or corrupted filesystems. No partition table or directory structure required. Raw bytes are enough.
+<br><br>
+</td>
+<td width="33%" align="center" valign="top">
+<br>
+<strong>FIRMWARE EXTRACTION</strong>
+<br><br>
+Carve SquashFS, JFFS2, UBIFS, U-Boot, FIT, and cramfs images from raw flash dumps with header-derived exact boundaries.
+<br><br>
+</td>
+</tr>
+<tr>
+<td width="33%" align="center" valign="top">
+<br>
+<strong>MEMORY FORENSICS</strong>
+<br><br>
+Recover LiME and HPAK acquisition images. The LiME size parser reads the segment chain to compute the exact dump extent.
+<br><br>
+</td>
+<td width="33%" align="center" valign="top">
+<br>
+<strong>MALWARE INVESTIGATION</strong>
+<br><br>
+Extract PE, ELF, DEX, and APK files from disk images where artifacts were cleared from the filesystem. No metadata needed.
+<br><br>
+</td>
+<td width="33%" align="center" valign="top">
+<br>
+<strong>CTF & RESEARCH</strong>
+<br><br>
+Custom signature corpus support (<code>.pala</code> format). Write a new file fingerprint in 10 lines of Python. Load it at runtime with <code>-c</code>.
+<br><br>
+</td>
+</tr>
+</table>
 
 ---
 
-## Features
+## Claude Code Integration
 
-- **Signature carving** - scans raw bytes for known file headers across 70+ file types; works on any source with no filesystem metadata required
-- **Firmware image recovery** - recovers SquashFS, JFFS2, UBIFS, U-Boot, FIT/DTB, and cramfs images with header-derived sizes; use `--triage-mode=firmware` for embedded/IoT targets
-- **Filesystem-aware inode recovery** (`--filesystem`) - walks live or partially-intact filesystem metadata for ext2/3/4, NTFS, FAT32, and APFS
-- **NTFS MFT stage-2** - parses `$DATA` run lists from carved MFT entries and assembles file content directly from cluster offsets; handles fragmented files
-- **FAT32 deleted-entry recovery** - recovers deleted files whose FAT chain has been cleared using contiguous cluster prediction
-- **Container unpacking** (`--container-depth`) - extracts member files from carved ZIP, DOCX, XLSX, PPTX, JAR, and APK archives
-- **Entropy classification** - classifies every 512-byte sector by Shannon entropy; `--skip-high-entropy` drops false-positive hits from encrypted volumes automatically
-- **Triage modes** - built-in presets for media, documents, executables, archives, email, windows, databases, memory, filesystem, and firmware types
-- **Sector-aligned scan** (`--align=N`) - restricts matches to offsets that are multiples of N bytes; useful for block device scans where images are always block-aligned
-- **SHA256 deduplication** - no file is written twice regardless of which stage finds it
-- **Block device progress** - prints scan progress to stderr every 256MB when scanning raw block devices
-- **Precision size parsers** - FLAC, LiME, SquashFS, U-Boot, FIT/DTB, and cramfs files are carved to exact byte boundaries using header-derived sizes instead of static caps
-- **Metadata extraction** (`--meta`) - JPEG EXIF, PNG headers, ELF/PE fields, MFT cluster runs, SQLite schema
-- **Pipeline integration** - `--json` produces machine-readable output per finding; pipe directly into Claude Code, Codex, or any downstream tool
-- **988KB binary** - single statically linked executable; no installer, no runtime, no dependencies
+<img src="assets/accent.svg">
+
+PALA was built with Claude Code. It is designed to run inside a Claude Code session.
+
+The binary is 988KB. It runs from a USB stick. The full recovery workflow - disk enumeration, raw carving, result analysis, file identification - stays in a single terminal conversation without switching tools or losing context.
+
+**`--json` output is designed for AI consumption.** Every finding includes offset, type, extension, size, path, quality, and SHA256. Pipe it directly into a Claude Code session and ask it to identify which files match what you are looking for.
+
+```bash
+# Run recovery and write findings
+sudo pala /dev/sda /media/usb/recovered/ --json > findings.json
+
+# Ask Claude Code: "Read findings.json. Which files are most likely my deleted presentation?"
+```
+
+Claude reads the structured output, ranks candidates by type and size, explains what each recovered file probably contains, and tells you exactly which files to open first - all inside the same session.
+
+```json
+{
+  "source": "/dev/sda",
+  "found": 47,
+  "findings": [
+    {
+      "offset": 1073741824,
+      "type": "jpeg",
+      "extension": "jpg",
+      "size": 3145728,
+      "path": "/media/usb/recovered/jpg_0001.jpg",
+      "quality": "Complete",
+      "sha256": "a3f2..."
+    }
+  ],
+  "session_summary": {
+    "bad_sectors": 0,
+    "merge_count": 3,
+    "partial_count": 1,
+    "files_per_gb": 2.74
+  }
+}
+```
 
 ---
 
@@ -76,9 +231,9 @@ cd PALA
 cargo build --release
 ```
 
-Binary lands at `target/release/pala`. Copy it to a USB stick or anywhere on your PATH.
+Binary lands at `target/release/pala`. Copy it to a USB stick or your PATH.
 
-For filesystem-aware recovery (`--filesystem`), The Sleuth Kit must be available at runtime. If absent, PALA falls back to signature carving only.
+For filesystem-aware recovery (`--filesystem`), The Sleuth Kit must be available at runtime. If absent, PALA warns and falls back to signature carving only.
 
 ```bash
 # Debian/Ubuntu
@@ -96,27 +251,29 @@ brew install sleuthkit
 # Recover everything from a disk image
 pala disk.img recovered/
 
-# Recover only JPEG and PDF from a live device
+# Recover only specific types from a live device
 sudo pala /dev/sdb recovered/ -t jpeg,pdf
 
-# Filesystem-aware recovery - finds files by inode, not just magic bytes
+# Filesystem-aware recovery
 sudo pala /dev/sdb recovered/ --filesystem=auto
 
-# Firmware/embedded recovery - SquashFS, U-Boot, JFFS2, UBIFS, FIT, cramfs
+# Firmware/embedded recovery
 pala firmware.bin recovered/ --triage-mode=firmware
 
-# Sector-aligned scan - only match at 512-byte block boundaries
+# Sector-aligned scan for block devices
 sudo pala /dev/sdb recovered/ --align=512
 
-# AI-assisted recovery - pipe findings to Claude Code or jq
+# Structured output for downstream tooling
 pala disk.img out/ --json | jq '.findings[] | {ext, size, offset}'
 
 # Skip encrypted sectors, unpack ZIP members
 pala disk.img out/ --skip-high-entropy --container-depth
 
-# Forensic triage - pull only Windows artifacts
+# Windows forensic artifacts only
 pala disk.img out/ --triage-mode=windows
 ```
+
+**Critical:** the output directory must be on a different drive than the source. Writing recovered files to the same drive risks overwriting data you are trying to recover. PALA warns if source and output share a device.
 
 ---
 
@@ -132,17 +289,16 @@ Options:
   -q, --quiet               Suppress progress output (use with --json)
       --json                Write structured JSON summary to stdout
       --meta                Extract file metadata into JSON output
-      --max-size <bytes>    Maximum size per recovered file (default: type-specific)
+      --max-size <bytes>    Maximum size per recovered file
       --min-size <bytes>    Minimum size per recovered file
   -n, --count <n>           Stop after recovering N files
       --align <bytes>       Only match signatures at offsets that are multiples of N
-                            (e.g. --align=512 for block-aligned firmware images)
       --triage-mode <mode>  Limit types to a preset group:
-                            media, documents, executables, archives,
-                            email, windows, databases, memory, filesystem, firmware
+                            media | documents | executables | archives |
+                            email | windows | databases | memory | filesystem | firmware
       --filesystem <fs>     Filesystem-aware inode recovery:
-                            auto, ext2, ntfs, apfs, fat32
-      --skip-high-entropy   Skip candidates whose start sector has Shannon entropy > 7.5
+                            auto | ext2 | ntfs | apfs | fat32
+      --skip-high-entropy   Skip sectors with Shannon entropy > 7.5
       --container-depth     Extract member files from carved ZIP/DOCX/XLSX/PPTX containers
       --no-fat32-stage2     Disable FAT32 deleted-entry recovery stage
   -h, --help                Show this help
@@ -152,59 +308,29 @@ Options:
 
 ## Supported Types
 
-| Type | Extension | Description |
-|------|-----------|-------------|
-| jpeg | jpg | JPEG Image |
-| png | png | PNG Image |
-| gif87a / gif89a | gif | GIF Image |
-| bmp | bmp | BMP Image |
-| tiff_le / tiff_be | tif | TIFF Image |
-| psd | psd | Photoshop Document |
-| riff | wav / avi / webp | RIFF Container (subtype auto-detected) |
-| mkv | mkv | MKV/WebM Video |
-| mp4 | mp4 | MP4/MOV Video |
-| mp3_id3 | mp3 | MP3 Audio (ID3) |
-| flac | flac | FLAC Audio (header-derived size) |
-| aac | aac | AAC Audio (ADTS) |
-| pdf | pdf | PDF Document |
-| rtf | rtf | RTF Document |
-| zip | zip / docx / xlsx / pptx | ZIP and Office Open XML (subtype auto-detected) |
-| ole2 | doc | Legacy Office (DOC / XLS / PPT) |
-| gz | gz | Gzip Archive |
-| 7z | 7z | 7-Zip Archive |
-| rar | rar | RAR Archive |
-| sqlite | db | SQLite Database |
-| sqlite_wal | db-wal | SQLite Write-Ahead Log |
-| eml | eml | Email (EML) |
-| evtx | evtx | Windows Event Log |
-| regf | dat | Windows Registry Hive |
-| lnk | lnk | Windows Shell Link |
-| pf | pf | Windows Prefetch |
-| thumbcache | db | Windows Thumbcache |
-| hibr / hibr_upper | bin | Windows Hibernate File |
-| wake_lower / wake_upper | bin | Windows Hibernate Resume |
-| pagedump / pagedu64 | dmp | Windows Memory Dump (BSOD) |
-| bplist | plist | Apple Binary Property List |
-| dex | dex | Android Dalvik Executable |
-| ntfs_mft | mft | NTFS MFT Entry |
-| fat32_fsinfo | fsinfo | FAT32 FSINFO Sector |
-| ext2_sb | sb | Ext2/3/4 Superblock |
-| ufs1_sb / ufs2_sb | ufs | UFS1/UFS2 Superblock |
-| lime | lime | Linux Memory Acquisition (LiME, header-derived size) |
-| hpak | hpak | HBGary Memory Acquisition (HPAK) |
-| elf | elf | ELF Binary |
-| pe | exe | PE/MZ Executable |
-| mng | mng | MNG Animation |
-| jng | jng | JNG Image |
-| luks | luks | LUKS Encrypted Volume Header |
-| bitlocker | bde | BitLocker Encrypted Volume |
-| squashfs_le / squashfs_be | sqsh | SquashFS Filesystem (v4, header-derived size) |
-| squashfs_le3 / squashfs_be3 | sqsh | SquashFS Filesystem (v3) |
-| jffs2_le / jffs2_be | jffs2 | JFFS2 Flash Filesystem |
-| ubifs | ubifs | UBIFS Flash Filesystem |
-| uboot | uboot | U-Boot Legacy Image (header-derived size) |
-| fit | itb | U-Boot FIT/DTB Image (header-derived size) |
-| cramfs_le / cramfs_be | cramfs | cramfs Filesystem (header-derived size) |
+<details>
+<summary>70+ supported file types across 8 categories</summary>
+
+| Category | Types |
+|----------|-------|
+| **Images** | jpeg, png, gif87a, gif89a, bmp, tiff (LE/BE), psd, mng, jng |
+| **Video** | mp4/mov, mkv/webm, riff (avi/wav/webp) |
+| **Audio** | mp3 (ID3), flac, aac (ADTS) |
+| **Documents** | pdf, rtf, ole2 (doc/xls/ppt), zip (docx/xlsx/pptx/jar/apk), eml |
+| **Archives** | gz, 7z, rar |
+| **Databases** | sqlite, sqlite-wal |
+| **Executables** | elf, pe/mz, dex, art |
+| **Forensic - Windows** | evtx, regf, lnk, prefetch, thumbcache, hibernate, bsod dumps |
+| **Forensic - Filesystem** | ntfs-mft, fat32-fsinfo, ext2/3/4 superblock, ufs1/ufs2 superblock, apfs |
+| **Forensic - Memory** | lime, hpak |
+| **Forensic - Crypto** | luks, bitlocker |
+| **Forensic - Network** | pcap (LE/BE), pcapng |
+| **Forensic - Virtual** | vmdk, vhdx |
+| **Firmware** | squashfs (LE/BE/v3), jffs2 (LE/BE), ubifs, u-boot, fit/dtb, cramfs (LE/BE) |
+| **Certificates** | openssh private key, pem certificate chain, der certificate |
+| **Other** | iso9660, bplist, systemd journal |
+
+</details>
 
 ---
 
@@ -254,13 +380,7 @@ Options:
     "bad_sectors": 0,
     "merge_count": 3,
     "partial_count": 1,
-    "files_per_gb": 2.74,
-    "entropy_survey": {
-      "zero_sectors": 1024,
-      "high_entropy_sectors": 0,
-      "total_sectors": 32768,
-      "high_entropy_skipped": 0
-    }
+    "files_per_gb": 2.74
   }
 }
 ```
@@ -274,35 +394,65 @@ Options:
 
 ## Custom Signatures
 
-PALA supports loadable signature corpus files for proprietary or niche file types.
+Load additional signatures at runtime with `-c`:
 
 ```bash
 pala disk.img out/ -c custom.pala
 ```
 
-A corpus file contains additional signatures in PALA's binary format. The `serialize_corpus()` function in `src/corpus.rs` produces valid corpus bytes from a `Vec<Signature>`.
+Write a corpus file in Python:
+
+```python
+import struct
+
+MAGIC = b"PALA"
+
+def make_corpus(sigs):
+    buf = MAGIC + b"\x01" + struct.pack("<I", len(sigs))
+    for s in sigs:
+        name  = s["name"].encode()
+        ext   = s["ext"].encode()
+        magic = s["magic"]
+        desc  = s["desc"].encode()
+        buf += bytes([len(name)]) + name
+        buf += bytes([len(ext)])  + ext
+        buf += bytes([len(magic)]) + magic
+        buf += b"\x00"  # flags
+        buf += b"\x00"  # magic_offset
+        buf += struct.pack("<Q", s["max_size"])
+        buf += struct.pack("<I", s["min_size"])
+        buf += bytes([len(desc)]) + desc
+    return buf
+
+open("custom.pala", "wb").write(make_corpus([{
+    "name": "mysave", "ext": "sav", "magic": b"MYSAVE\x01",
+    "max_size": 10 * 1024 * 1024, "min_size": 64, "desc": "My Game Save"
+}]))
+```
+
+The full corpus format is documented in `src/corpus.rs`.
 
 ---
 
 ## Known Issues
 
-- Filesystem-aware recovery requires The Sleuth Kit at runtime; if absent, PALA warns and falls back to signature carving only
-- FAT32 stage-2 cluster prediction assumes unfragmented files; heavily fragmented volumes will produce incomplete recoveries
-- Files whose sectors have been overwritten by new data cannot be recovered regardless of method
-- Full-disk encryption: PALA cannot recover from an encrypted volume without the key; the entropy survey will report a high percentage of high-entropy sectors as an indicator
-- JFFS2 and UBIFS are variable-length by design and do not carry a total-size field; PALA uses a conservative static cap for these formats
+- FAT32 stage-2 cluster prediction assumes unfragmented files; heavily fragmented volumes produce incomplete recoveries
+- JFFS2 and UBIFS do not carry a total-size field; PALA uses a conservative static cap for these formats
+- Files whose sectors have been overwritten by new data cannot be recovered
+- Encrypted volumes: PALA detects LUKS and BitLocker headers but cannot decrypt content
+- Hibernate recovery: if the drive resumed from hibernation, the `hiberfil.sys` header is zeroed; no magic bytes means no carve
 
 ---
 
 ## Getting Help
 
-Open an issue at [github.com/francis-rancid/PALA/issues](https://github.com/francis-rancid/PALA/issues). Include the error output and PALA version (`pala --version`).
+Open an issue at [github.com/francis-rancid/PALA/issues](https://github.com/francis-rancid/PALA/issues). Include the error output and `pala --version`.
 
 ---
 
 ## Contributing
 
-Contributions welcome. The most useful additions are new file signatures. To add one, extend the `SIGS` array in `src/main.rs` with a magic byte sequence, an optional end marker or size field strategy, a minimum and maximum size, and a short description.
+Contributions welcome. The most useful additions are new file signatures. Extend the `SIGS` array in `src/main.rs` with a magic byte sequence, an optional end marker or size field strategy, size bounds, and a short description.
 
 ---
 
