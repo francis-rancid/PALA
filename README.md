@@ -5,14 +5,6 @@
 <p><strong>File carver and data recovery. 988KB. No runtime dependencies.</strong></p>
 
 <p>
-<img src="https://img.shields.io/badge/Rust-stable-orange?style=flat-square&logo=rust&logoColor=white" alt="Rust stable">
-<img src="https://img.shields.io/badge/binary-988KB-brightgreen?style=flat-square" alt="988KB">
-<img src="https://img.shields.io/badge/dependencies-none-brightgreen?style=flat-square" alt="No runtime deps">
-<a href="https://github.com/francis-rancid/PALA/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/francis-rancid/PALA/ci.yml?label=tests&style=flat-square" alt="tests"></a>
-<a href="https://github.com/francis-rancid/PALA/blob/main/LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue?style=flat-square" alt="license"></a>
-</p>
-
-<p>
 <a href="#features--benefits">Features & Benefits</a> &nbsp;|&nbsp;
 <a href="#the-pala-difference">What Makes It Different</a> &nbsp;|&nbsp;
 <a href="#use-cases">Use Cases</a> &nbsp;|&nbsp;
