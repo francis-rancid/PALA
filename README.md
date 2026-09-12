@@ -2,7 +2,10 @@
 
 <h1>PALA</h1>
 
-<p><strong>File carver and data recovery. 988KB. No runtime dependencies.</strong></p>
+<p><strong>Taking up less space, to recover more.</strong></p>
+
+<p>Download it when you least expect to need it.<br>
+Keep it on hand for when Claude Code accidentally deletes that directory.</p>
 
 <p>
 <a href="#features--benefits">Features & Benefits</a> &nbsp;|&nbsp;
