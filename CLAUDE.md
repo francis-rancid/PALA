@@ -335,4 +335,4 @@ The drive may have resumed from hibernation, which zeros the `hiberfil.sys` head
 **PALA crashes or exits non-zero:**
 
 - Run with `-q` removed to see per-file output.
-- Open an issue at https://github.com/sshpie/PALA with the error output and the pala version.
+- Open an issue at https://github.com/francis-rancid/PALA with the error output and the pala version.

@@ -4,8 +4,8 @@
 <img src="https://img.shields.io/badge/Rust-stable-orange?style=flat-square&logo=rust&logoColor=white" alt="Rust stable">
 <img src="https://img.shields.io/badge/binary-988KB-brightgreen?style=flat-square" alt="988KB">
 <img src="https://img.shields.io/badge/dependencies-none-brightgreen?style=flat-square" alt="No runtime deps">
-<a href="https://github.com/sshpie/PALA/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/sshpie/PALA/ci.yml?label=tests&style=flat-square" alt="tests"></a>
-<a href="https://github.com/sshpie/PALA/blob/main/LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue?style=flat-square" alt="license"></a>
+<a href="https://github.com/francis-rancid/PALA/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/francis-rancid/PALA/ci.yml?label=tests&style=flat-square" alt="tests"></a>
+<a href="https://github.com/francis-rancid/PALA/blob/main/LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue?style=flat-square" alt="license"></a>
 </div>
 
 <br />
@@ -71,7 +71,7 @@ Works on Linux and Windows. Steal it. Make it better. Use it for reverse enginee
 Requires Rust stable. No other build dependencies.
 
 ```bash
-git clone https://github.com/sshpie/PALA.git
+git clone https://github.com/francis-rancid/PALA.git
 cd PALA
 cargo build --release
 ```
@@ -296,7 +296,7 @@ A corpus file contains additional signatures in PALA's binary format. The `seria
 
 ## Getting Help
 
-Open an issue at [github.com/sshpie/PALA/issues](https://github.com/sshpie/PALA/issues). Include the error output and PALA version (`pala --version`).
+Open an issue at [github.com/francis-rancid/PALA/issues](https://github.com/francis-rancid/PALA/issues). Include the error output and PALA version (`pala --version`).
 
 ---
 
@@ -310,7 +310,7 @@ Contributions welcome. The most useful additions are new file signatures. To add
 
 See [CONTRIBUTORS.md](CONTRIBUTORS.md).
 
-- **Nicholas Kloster** ([@sshpie](https://github.com/sshpie)) - author
+- **Nicholas Kloster** ([@francis-rancid](https://github.com/francis-rancid)) - author
 - **Claude Code** ([claude.ai/code](https://claude.ai/code)) - filesystem recovery stages, MFT run list parsing, FAT32 deleted-entry recovery, entropy classification, ZIP container depth, firmware signatures, FLAC/LiME/SquashFS/U-Boot/FIT/cramfs size parsers, sector-aligned scan mode, and test suite
 
 ---
