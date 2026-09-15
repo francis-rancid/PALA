@@ -29,6 +29,7 @@ pub enum Special {
     Luks,
     SquashfsLe, SquashfsBe,
     Uboot, Fit, Cramfs,
+    Tar, Ogg, Bz2, Zstd,
 }
 
 // Static signature table — zero-cost, embedded in binary.
@@ -153,6 +154,33 @@ static SIGS: &[Sig] = &[
     // cramfs: filesystem size at bytes 4-7 (uint32 LE/BE).
     Sig { name:"cramfs_le",    ext:"cramfs",magic:b"\x45\x3d\xcd\x28",  moff:0, em:None, em_last:false, em_trail:0, special:Special::Cramfs, max:256*MB, min:76,  desc:"cramfs Filesystem (LE)" },
     Sig { name:"cramfs_be",    ext:"cramfs",magic:b"\x28\xcd\x3d\x45",  moff:0, em:None, em_last:false, em_trail:0, special:Special::Cramfs, max:256*MB, min:76,  desc:"cramfs Filesystem (BE)" },
+    // ── Compressed archives (common on Linux, containers, firmware) ───────────
+    // GNU tar / POSIX ustar: "ustar" magic at byte 257 inside the first 512-byte header block.
+    // moff=257 backs the candidate to byte 0 (the true archive start).
+    Sig { name:"tar",          ext:"tar",   magic:b"ustar",             moff:257, em:None, em_last:false, em_trail:0, special:Special::Tar,    max:4*GB,   min:512, desc:"TAR Archive" },
+    // XZ stream: 6-byte header magic + "YZ" end-of-stream footer (rfind = last stream in multi-stream file).
+    Sig { name:"xz",           ext:"xz",    magic:b"\xfd7zXZ\x00",     moff:0, em:Some(b"\x59\x5a"), em_last:true, em_trail:0, special:Special::None, max:4*GB, min:12, desc:"XZ Compressed Archive" },
+    // Bzip2: "BZh[1-9]" header; bz2 blocks are bit-packed so no reliable byte-aligned end marker.
+    Sig { name:"bz2",          ext:"bz2",   magic:b"BZh",              moff:0, em:None, em_last:false, em_trail:0, special:Special::Bz2,    max:2*GB,   min:10,  desc:"Bzip2 Compressed Archive" },
+    // Zstandard: 4-byte magic; FHD reserved bit must be 0 (validated in zstd_ok).
+    Sig { name:"zstd",         ext:"zst",   magic:b"\x28\xb5\x2f\xfd", moff:0, em:None, em_last:false, em_trail:0, special:Special::Zstd,   max:4*GB,   min:8,   desc:"Zstandard Compressed Data" },
+    // ── Modern image formats ──────────────────────────────────────────────────
+    // HEIC/HEIF: ISOBMFF container (same as MP4) with brand bytes distinguishing it.
+    // moff=4 aligns the search to find "ftyp<brand>" starting at box byte 4.
+    // mp4_size() works correctly since HEIC is a valid ftyp-rooted ISOBMFF container.
+    Sig { name:"heic",         ext:"heic",  magic:b"ftypheic",          moff:4, em:None, em_last:false, em_trail:0, special:Special::Mp4,    max:500*MB, min:0,   desc:"HEIC Image (High Efficiency)" },
+    Sig { name:"heif",         ext:"heif",  magic:b"ftypmif1",          moff:4, em:None, em_last:false, em_trail:0, special:Special::Mp4,    max:500*MB, min:0,   desc:"HEIF Image Container" },
+    Sig { name:"avif",         ext:"avif",  magic:b"ftypavif",          moff:4, em:None, em_last:false, em_trail:0, special:Special::Mp4,    max:500*MB, min:0,   desc:"AVIF Image (AV1)" },
+    // ── OGG container ────────────────────────────────────────────────────────
+    // OggS magic; ogg_ok validates beginning-of-stream page flag; ogg_size walks page headers.
+    Sig { name:"ogg",          ext:"ogg",   magic:b"OggS",              moff:0, em:None, em_last:false, em_trail:0, special:Special::Ogg,    max:500*MB, min:27,  desc:"OGG Media Container" },
+    // ── RAR 5.x ──────────────────────────────────────────────────────────────
+    // RAR5 has a different 8-byte magic from RAR4; the RAR4 size parser cannot walk RAR5 blocks.
+    // Separate sig ensures correct type labeling; static cap is the fallback (no RAR5 block walker yet).
+    Sig { name:"rar5",         ext:"rar",   magic:b"Rar!\x1a\x07\x01\x00", moff:0, em:None, em_last:false, em_trail:0, special:Special::None, max:4*GB, min:8, desc:"RAR 5.x Archive" },
+    // ── Windows Mini Dump ─────────────────────────────────────────────────────
+    // MDMP: Windows Minidump (from crash reporting, WER, user-mode dumps). Separate from BSOD PAGEDUMP.
+    Sig { name:"mdmp",         ext:"dmp",   magic:b"MDMP",              moff:0, em:None, em_last:false, em_trail:0, special:Special::None,   max:512*MB, min:32,  desc:"Windows Minidump (WER/User-mode)" },
 ];
 
 // ─── Runtime signature (static or corpus-loaded) ──────────────────────────────
@@ -797,6 +825,151 @@ fn cramfs_size(data: &[u8]) -> Option<usize> {
     let sz_be = u32::from_be_bytes(data[4..8].try_into().ok()?) as usize;
     if sz_be >= 76 && sz_be <= 256 * MB { return Some(sz_be); }
     None
+}
+
+// ─── New size parsers ─────────────────────────────────────────────────────────
+
+// TAR: walk 512-byte blocks. Each entry = 512-byte header + ceil(size/512)*512 data blocks.
+// EOF = two consecutive all-zero 512-byte blocks.
+// Handles POSIX ustar, GNU tar, and base-256 encoded sizes (files > 8GB in GNU extensions).
+fn tar_size(data: &[u8]) -> Option<usize> {
+    const BLOCK: usize = 512;
+    let mut pos = 0usize;
+    let mut zero_blocks = 0usize;
+    for _ in 0..1_000_000usize {
+        if pos + BLOCK > data.len() { return Some(pos.min(data.len())); }
+        let header = &data[pos..pos + BLOCK];
+        if header.iter().all(|&b| b == 0) {
+            zero_blocks += 1;
+            pos += BLOCK;
+            if zero_blocks >= 2 { return Some(pos); }
+            continue;
+        }
+        zero_blocks = 0;
+        let typeflag = header[156];
+        let size_bytes = &header[124..136];
+        let file_size: usize = if size_bytes[0] & 0x80 != 0 {
+            // Base-256 (GNU extension for files > 8GB)
+            let mut v = 0u64;
+            for i in 1..12 { v = (v << 8) | (size_bytes[i] as u64); }
+            v as usize
+        } else {
+            // Octal ASCII (null or space terminated)
+            let end = size_bytes.iter().position(|&b| b == 0 || b == b' ').unwrap_or(12);
+            usize::from_str_radix(std::str::from_utf8(&size_bytes[..end]).unwrap_or("0"), 8).unwrap_or(0)
+        };
+        // 'L' (GNU long name) and 'K' (GNU long link) headers have a payload but real size is in next header
+        let data_blocks = match typeflag {
+            b'L' | b'K' => (file_size + BLOCK - 1) / BLOCK,
+            _ => (file_size + BLOCK - 1) / BLOCK,
+        };
+        pos = pos.checked_add(BLOCK)?.checked_add(data_blocks.checked_mul(BLOCK)?)?;
+        if pos > data.len() { return None; }
+    }
+    None
+}
+
+// OGG: walk page headers. Page = 27-byte header + n_segs-byte segment table + data.
+// EOS page (header_type & 0x04) marks the physical end of the stream.
+fn ogg_size(data: &[u8]) -> Option<usize> {
+    let mut pos = 0usize;
+    for _ in 0..10_000_000usize {
+        if pos + 27 > data.len() { return Some(pos.min(data.len())); }
+        if &data[pos..pos+4] != b"OggS" { return Some(pos); }
+        if data[pos + 4] != 0 { return Some(pos); }
+        let header_type = data[pos + 5];
+        let n_segs = data[pos + 26] as usize;
+        if pos + 27 + n_segs > data.len() { return Some(pos); }
+        let data_len: usize = data[pos+27..pos+27+n_segs].iter().map(|&b| b as usize).sum();
+        let page_size = 27 + n_segs + data_len;
+        let next = pos.checked_add(page_size)?;
+        if next > data.len() { return Some(pos); }
+        pos = next;
+        if header_type & 0x04 != 0 { return Some(pos); } // EOS
+    }
+    None
+}
+
+// Bz2: blocks are bit-packed so there's no reliable byte-aligned end marker.
+// We validate the header and use the static cap; bz2_ok weeds out false hits on "BZh".
+fn bz2_ok(d: &[u8]) -> bool {
+    d.len() >= 4 && d[0] == b'B' && d[1] == b'Z' && d[2] == b'h'
+        && d[3] >= b'1' && d[3] <= b'9'
+}
+
+// Zstandard: magic is specific; validate reserved bit (bit 4 of FHD byte) is 0.
+fn zstd_ok(d: &[u8]) -> bool {
+    if d.len() < 6 { return false; }
+    let fhd = d[4];
+    fhd & 0x08 == 0  // reserved bit must be 0
+}
+
+// Walk a zstd frame to its exact byte length.
+// Frame: 4-byte magic + FHD(1) + optional Window_Descriptor(1) + optional Dict_ID(0/1/2/4)
+// + optional Content_Size(0/1/2/8) + blocks(3+N each) + optional Checksum(4).
+fn zstd_size(d: &[u8]) -> Option<usize> {
+    if d.len() < 6 { return None; }
+    let fhd = d[4];
+    let fcs_flag  = (fhd >> 6) & 0x03;
+    let ssf       = (fhd >> 5) & 0x01;
+    let chk_flag  = (fhd >> 3) & 0x01;
+    let did_flag  = (fhd >> 1) & 0x03;
+    if fhd & 0x08 != 0 { return None; } // reserved bit set
+
+    let mut pos = 5usize;
+    if ssf == 0 { pos += 1; } // Window_Descriptor
+    pos += match did_flag { 0 => 0, 1 => 1, 2 => 2, 3 => 4, _ => return None };
+    // Content_Size size: FCS_Flag=0+SSF=1 -> 1 byte; FCS_Flag=1 -> 2 bytes; 2 -> 4 bytes; 3 -> 8 bytes.
+    pos += if ssf == 1 && fcs_flag == 0 { 1 }
+           else { match fcs_flag { 0 => 0, 1 => 2, 2 => 4, 3 => 8, _ => return None } };
+    if pos > d.len() { return None; }
+
+    loop {
+        if pos + 3 > d.len() { return None; }
+        let hdr = (d[pos] as u32) | ((d[pos+1] as u32) << 8) | ((d[pos+2] as u32) << 16);
+        let last  = (hdr & 0x01) != 0;
+        let btype = (hdr >> 1) & 0x03;
+        let bsize = (hdr >> 3) as usize;
+        // RLE_Block (type 1): Block_Size is the decoded repeat count; stored content is 1 byte.
+        // Raw_Block (type 0) and Compressed_Block (type 2): Block_Size is stored bytes.
+        let stored = match btype {
+            0 | 2 => bsize,
+            1 => 1,
+            _ => return None, // reserved
+        };
+        pos += 3 + stored;
+        if pos > d.len() { return None; }
+        if last { break; }
+    }
+
+    if chk_flag != 0 { pos += 4; }
+    if pos > d.len() { return None; }
+    Some(pos)
+}
+
+// TAR: magic at moff=257 means d[0] is the start of the 512-byte header block.
+// "ustar" at d[257..262]; check checksum field as further validation.
+fn tar_ok(d: &[u8]) -> bool {
+    if d.len() < 262 { return false; }
+    if &d[257..262] != b"ustar" { return false; }
+    // Checksum validation: sum all header bytes treating [148..156] as 0x20 (space).
+    if d.len() < 512 { return false; }
+    let mut sum: u32 = 0;
+    for (i, &b) in d[..512].iter().enumerate() {
+        sum += if (148..156).contains(&i) { 0x20u32 } else { b as u32 };
+    }
+    // Stored checksum: octal ASCII in d[148..156]
+    let ck_bytes = &d[148..156];
+    let end = ck_bytes.iter().position(|&b| b == 0 || b == b' ' || b == 0).unwrap_or(8);
+    let stored = usize::from_str_radix(std::str::from_utf8(&ck_bytes[..end]).unwrap_or("0"), 8)
+        .unwrap_or(0);
+    // Both unsigned and signed interpretations are used by different implementations
+    stored == sum as usize || stored == (sum as i32) as usize
+}
+
+// OGG: first page must be BOS (beginning-of-stream, header_type bit 1 set = 0x02).
+fn ogg_ok(d: &[u8]) -> bool {
+    d.len() >= 28 && &d[0..4] == b"OggS" && d[4] == 0 && d[5] & 0x02 != 0
 }
 
 // ─── Subtype detection ────────────────────────────────────────────────────────
@@ -1604,6 +1777,10 @@ fn scan_sig(src: &[u8], base_offset: usize, sig: &DynSig, sig_idx: usize, max_ov
             Special::Luks        => luks_ok(carved),
             Special::Elf         => elf_ok(carved),
             Special::Pe          => mz_ok(carved),
+            Special::Tar         => tar_ok(carved),
+            Special::Ogg         => ogg_ok(carved),
+            Special::Bz2         => bz2_ok(carved),
+            Special::Zstd        => zstd_ok(carved),
             _                    => true,
         };
         if !valid { continue; }
@@ -1801,6 +1978,29 @@ fn scan_sig(src: &[u8], base_offset: usize, sig: &DynSig, sig_idx: usize, max_ov
                 };
                 (&sig.ext, &sig.desc, trim)
             }
+            Special::Tar => {
+                let trim = match tar_size(carved) {
+                    Some(n) if n <= carved.len() => { trunc = false; &carved[..n] }
+                    _ => carved,
+                };
+                (&sig.ext, &sig.desc, trim)
+            }
+            Special::Ogg => {
+                let trim = match ogg_size(carved) {
+                    Some(n) if n <= carved.len() => { trunc = false; &carved[..n] }
+                    _ => carved,
+                };
+                (&sig.ext, &sig.desc, trim)
+            }
+            Special::Zstd => {
+                let trim = match zstd_size(carved) {
+                    Some(n) if n <= carved.len() => { trunc = false; &carved[..n] }
+                    _ => carved,
+                };
+                (&sig.ext, &sig.desc, trim)
+            }
+            // Bz2: bit-packed EOS marker; no byte-aligned trim possible.
+            Special::Bz2 => (&sig.ext, &sig.desc, carved),
             _ => (&sig.ext, &sig.desc, carved),
         };
 
@@ -1850,6 +2050,10 @@ fn frag_valid(data: &[u8], special: Special) -> bool {
         Special::Dex         => dex_ok(data),
         Special::Pf          => pf_ok(data),
         Special::Thumbcache  => thumbcache_ok(data),
+        Special::Tar         => tar_ok(data),
+        Special::Ogg         => ogg_ok(data),
+        Special::Bz2         => bz2_ok(data),
+        Special::Zstd        => zstd_ok(data),
         Special::Zip => zip_eocd_end(data).is_some(),
         _            => true, // Riff/Mp4/Mkv/etc — accept; size-trimmer corrects the bounds
     }
@@ -2542,58 +2746,70 @@ fn fat32_read_file(src: &[u8], params: &Fat32Params, first_cluster: u32, size: u
 
 struct Fat32DirEnt { name: String, first_cluster: u32, size: u32 }
 
-// Scan a directory cluster chain for deleted entries (first byte 0xE5).
+fn fat32_83name(e: &[u8]) -> String {
+    let first = if e[0] == 0xE5 { b'?' } else { e[0] };
+    let name_iter = std::iter::once(first).chain(e[1..8].iter().copied());
+    let name_part: String = name_iter.map(|b| b as char).take_while(|c| *c != ' ').collect();
+    let ext_part: String  = e[8..11].iter().map(|&b| b as char).take_while(|c| *c != ' ').collect();
+    if ext_part.is_empty() { name_part } else { format!("{name_part}.{ext_part}") }
+}
+
+// Walk ALL directories on a FAT32 partition (BFS) for deleted file entries.
+// The original root-only scan missed nearly every real file; subdirectory walk is required.
+// Active subdirectories are enqueued from live entries; deleted subdirectory clusters are
+// also enqueued when the first_cluster field is still legible (FAT entry may be cleared).
 fn fat32_deleted_entries(src: &[u8], params: &Fat32Params, start_cluster: u32) -> Vec<Fat32DirEnt> {
-    let mut entries = Vec::new();
-    let mut cur = start_cluster;
-    let mut visited = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    let mut visited_dirs: std::collections::HashSet<u32> = Default::default();
+    let mut dir_queue: Vec<u32> = vec![start_cluster];
+    const MAX_DIRS: usize = 50_000;
 
-    loop {
-        if !visited.insert(cur) { break; } // cycle guard
-        let off = fat32_cluster_offset(params, cur);
-        if off + params.cluster_size > src.len() { break; }
-        let dir_data = &src[off..off + params.cluster_size];
+    while let Some(dir_cluster) = dir_queue.pop() {
+        if out.len() + dir_queue.len() > 500_000 { break; }
+        if visited_dirs.len() >= MAX_DIRS { break; }
+        if !visited_dirs.insert(dir_cluster) { continue; }
 
-        for i in 0..(params.cluster_size / 32) {
-            let e = &dir_data[i*32..(i+1)*32];
-            if e[0] == 0x00 { break; }           // end of directory
-            if e[0] != 0xE5 { continue; }         // only deleted entries
-            if e[11] == 0x0F { continue; }         // LFN entry — skip
-            if e[11] & 0x08 != 0 { continue; }    // volume label — skip
-            if e[11] & 0x10 != 0 { continue; }    // subdirectory — skip (could recurse)
+        let mut cur = dir_cluster;
+        let mut chain_vis: std::collections::HashSet<u32> = Default::default();
 
-            // Reconstruct 8.3 name
-            let name_part: String = e[0..8].iter()
-                .map(|&b| b as char)
-                .take_while(|c| *c != ' ')
-                .collect();
-            let ext_part: String  = e[8..11].iter()
-                .map(|&b| b as char)
-                .take_while(|c| *c != ' ')
-                .collect();
-            let full_name = if ext_part.is_empty() {
-                name_part
-            } else {
-                format!("{name_part}.{ext_part}")
-            };
+        loop {
+            if !chain_vis.insert(cur) { break; }
+            let off = fat32_cluster_offset(params, cur);
+            if off + params.cluster_size > src.len() { break; }
+            let dir_data = &src[off..off + params.cluster_size];
 
-            let hi  = u16::from_le_bytes([e[20], e[21]]) as u32;
-            let lo  = u16::from_le_bytes([e[26], e[27]]) as u32;
-            let fc  = (hi << 16) | lo;
-            let sz  = u32::from_le_bytes(e[28..32].try_into().unwrap_or([0;4]));
+            for i in 0..(params.cluster_size / 32) {
+                let e = &dir_data[i*32..(i+1)*32];
+                if e[0] == 0x00 { break; }          // end-of-directory
+                if e[11] == 0x0F { continue; }       // LFN entry
+                if e[11] & 0x08 != 0 { continue; }  // volume label
 
-            if fc >= 2 && sz > 0 {
-                entries.push(Fat32DirEnt { name: full_name, first_cluster: fc, size: sz });
+                let hi = u16::from_le_bytes([e[20], e[21]]) as u32;
+                let lo = u16::from_le_bytes([e[26], e[27]]) as u32;
+                let fc = (hi << 16) | lo;
+
+                if e[11] & 0x10 != 0 {
+                    // Subdirectory (active or deleted); skip . and ..
+                    if e[0] == b'.' { continue; }
+                    if fc >= 2 && !visited_dirs.contains(&fc) { dir_queue.push(fc); }
+                    continue;
+                }
+
+                if e[0] != 0xE5 { continue; } // only deleted files
+
+                let sz = u32::from_le_bytes(e[28..32].try_into().unwrap_or([0;4]));
+                if fc >= 2 && sz > 0 {
+                    out.push(Fat32DirEnt { name: fat32_83name(e), first_cluster: fc, size: sz });
+                }
+            }
+
+            match fat32_next_cluster(src, params, cur) {
+                Some(next) => cur = next,
+                None => break,
             }
         }
-
-        // Follow FAT chain to next directory cluster; stop if cleared/end
-        match fat32_next_cluster(src, params, cur) {
-            Some(next) => cur = next,
-            None => break,
-        }
     }
-    entries
+    out
 }
 
 fn carve_fat32_stage2(
@@ -2918,6 +3134,11 @@ fn usage() {
     eprintln!("                       FS: ext2|ext3|ext4|fat12|fat16|fat32|ntfs|hfs|ufs1|ufs2|auto");
     eprintln!("                       Runs inode-map phase first, then sig scan deduplicates by SHA256");
     eprintln!("      --align=N        Only recover files aligned to N bytes (e.g. 512, 4096); useful for block devices");
+    eprintln!("      --triage-mode=M  Restrict to a named type group:");
+    eprintln!("                       media | documents | executables | archives | email |");
+    eprintln!("                       memory | filesystem | windows | databases | firmware | forensic");
+    eprintln!("      --frag-gap=N     Allow up to N zero-filled bytes between fragments (default 0)");
+    eprintln!("      --no-fat32-stage2  Disable FAT32 deleted-entry cluster recovery");
     eprintln!("  -h, --help           Show this help\n");
     eprintln!("Examples:");
     eprintln!("  pala disk.img /mnt/usb/recovered/");
@@ -3007,7 +3228,7 @@ fn main() -> Result<()> {
             }
             "--triage-mode" => {
                 i += 1;
-                if i >= args.len() { anyhow::bail!("--triage-mode requires documents|databases|media|forensic|firmware"); }
+                if i >= args.len() { anyhow::bail!("--triage-mode requires a mode name; run --help for the list"); }
                 triage_mode = Some(args[i].clone());
             }
             a if a.starts_with("--triage-mode=") => {
@@ -3051,13 +3272,23 @@ fn main() -> Result<()> {
             "documents" => &["pdf", "rtf", "zip", "ole2"],
             "databases" => &["sqlite", "sqlite_wal"],
             "media"     => &["jpeg", "png", "gif87a", "gif89a", "bmp", "tiff_le", "tiff_be",
-                             "psd", "riff", "mkv", "mp4", "mp3_id3", "flac", "aac"],
+                             "psd", "riff", "mkv", "mp4", "mp3_id3", "flac", "aac",
+                             "heic", "heif", "avif", "ogg", "mng", "jng"],
+            "executables" => &["elf", "pe", "dex", "art"],
+            "archives"  => &["zip", "gz", "7z", "rar", "rar5", "tar", "xz", "bz2", "zstd"],
+            "email"     => &["eml"],
+            "memory"    => &["lime", "hpak", "pagedump", "pagedu64",
+                             "hibr", "hibr_upper", "wake_lower", "wake_upper"],
+            "filesystem"=> &["ntfs_mft", "fat32_fsinfo", "ext2_sb", "ufs1_sb", "ufs2_sb", "apfs"],
+            "windows"   => &["evtx", "regf", "lnk", "pf", "thumbcache",
+                             "hibr", "hibr_upper", "wake_lower", "wake_upper",
+                             "pagedump", "pagedu64", "bplist", "mdmp"],
             "forensic"  => &["evtx", "regf", "lnk", "pf", "thumbcache", "hibr", "pagedump",
                              "ntfs_mft", "fat32_fsinfo", "lime"],
             "firmware"  => &["squashfs_le", "squashfs_be", "squashfs_le3", "squashfs_be3",
                              "jffs2_le", "jffs2_be", "ubifs", "uboot", "fit",
                              "cramfs_le", "cramfs_be", "elf"],
-            other => anyhow::bail!("unknown --triage-mode: {other}; choose documents|databases|media|forensic|firmware"),
+            other => anyhow::bail!("unknown --triage-mode: {other}; choose documents|databases|media|executables|archives|email|memory|filesystem|windows|forensic|firmware"),
         };
         let names: Vec<String> = preset.iter().map(|s| s.to_string()).collect();
         types = Some(match types.take() {

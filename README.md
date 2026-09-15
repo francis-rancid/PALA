@@ -46,8 +46,8 @@ Parses NTFS MFT run lists and FAT32 deleted entries from raw cluster offsets. Re
 </tr>
 </table>
 
-- **70+ file types** across media, documents, archives, forensic artifacts, firmware images, and memory captures
-- **Precision size parsers** for FLAC, LiME, SquashFS, U-Boot, FIT, and cramfs - header-derived exact boundaries, no static caps
+- **80+ file types** across media, documents, archives, forensic artifacts, firmware images, and memory captures
+- **Precision size parsers** for FLAC, LiME, SquashFS, U-Boot, FIT, cramfs, TAR, OGG, and Zstandard - header-derived exact boundaries, no static caps
 - **Entropy classification** identifies and optionally skips encrypted sectors to eliminate false-positive hits
 - **Container unpacking** (`--container-depth`) extracts member files from carved ZIP, DOCX, XLSX, JAR, and APK archives
 - **Sector-aligned scan** (`--align=N`) restricts matches to block-aligned offsets for raw block device forensics
@@ -201,7 +201,7 @@ Claude reads the structured output, ranks candidates by type and size, explains 
       "extension": "jpg",
       "size": 3145728,
       "path": "/media/usb/recovered/jpg_0001.jpg",
-      "quality": "Complete",
+      "quality": "complete",
       "sha256": "a3f2..."
     }
   ],
@@ -290,11 +290,12 @@ Options:
       --align <bytes>       Only match signatures at offsets that are multiples of N
       --triage-mode <mode>  Limit types to a preset group:
                             media | documents | executables | archives |
-                            email | windows | databases | memory | filesystem | firmware
+                            email | windows | databases | memory | filesystem | firmware | forensic
       --filesystem <fs>     Filesystem-aware inode recovery:
                             auto | ext2 | ntfs | apfs | fat32
       --skip-high-entropy   Skip sectors with Shannon entropy > 7.5
       --container-depth     Extract member files from carved ZIP/DOCX/XLSX/PPTX containers
+      --frag-gap <bytes>    Tolerate gaps up to N zero bytes when reassembling fragments (default: 0)
       --no-fat32-stage2     Disable FAT32 deleted-entry recovery stage
   -h, --help                Show this help
 ```
@@ -308,14 +309,14 @@ Options:
 
 | Category | Types |
 |----------|-------|
-| **Images** | jpeg, png, gif87a, gif89a, bmp, tiff (LE/BE), psd, mng, jng |
+| **Images** | jpeg, png, gif87a, gif89a, bmp, tiff (LE/BE), psd, mng, jng, heic, heif, avif |
 | **Video** | mp4/mov, mkv/webm, riff (avi/wav/webp) |
-| **Audio** | mp3 (ID3), flac, aac (ADTS) |
+| **Audio** | mp3 (ID3), flac, aac (ADTS), ogg |
 | **Documents** | pdf, rtf, ole2 (doc/xls/ppt), zip (docx/xlsx/pptx/jar/apk), eml |
-| **Archives** | gz, 7z, rar |
+| **Archives** | gz, 7z, rar, rar5, tar, xz, bz2, zstd |
 | **Databases** | sqlite, sqlite-wal |
 | **Executables** | elf, pe/mz, dex, art |
-| **Forensic - Windows** | evtx, regf, lnk, prefetch, thumbcache, hibernate, bsod dumps |
+| **Forensic - Windows** | evtx, regf, lnk, prefetch, thumbcache, hibernate, bsod dumps, mdmp (minidump) |
 | **Forensic - Filesystem** | ntfs-mft, fat32-fsinfo, ext2/3/4 superblock, ufs1/ufs2 superblock, apfs |
 | **Forensic - Memory** | lime, hpak |
 | **Forensic - Crypto** | luks, bitlocker |
@@ -347,7 +348,7 @@ Options:
       "size": 544,
       "path": "recovered/jpg_0001.jpg",
       "sha256": "a3f2...",
-      "quality": "Complete",
+      "quality": "complete",
       "source": null
     },
     {
@@ -357,7 +358,7 @@ Options:
       "size": 131072,
       "path": "recovered/jpg_0002.jpg",
       "sha256": "b7c4...",
-      "quality": "Complete",
+      "quality": "complete",
       "source": "mft:00004000"
     },
     {
@@ -367,7 +368,7 @@ Options:
       "size": 65536,
       "path": "recovered/jpg_0003.jpg",
       "sha256": "d1e9...",
-      "quality": "Fragmented",
+      "quality": "fragmented",
       "source": "fat32:00000200"
     }
   ],
@@ -383,7 +384,7 @@ Options:
 | Field | Values |
 |-------|--------|
 | `source` | `null` (sig carve), `"mft:<hex>"` (NTFS stage-2), `"fat32:<hex>"` (FAT32 stage-2), `"inode:<path>"` (TSK), `"zip:<hex>:<member>"` (container) |
-| `quality` | `Complete` (end marker found), `Partial` (truncated at max-size), `Fragmented` (non-contiguous clusters) |
+| `quality` | `complete` (end marker found), `partial` (truncated at max-size), `fragmented` (non-contiguous clusters) |
 
 ---
 

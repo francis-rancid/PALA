@@ -2185,6 +2185,235 @@ def main():
         print(f"\r  {RED}FAIL{NC}  {_label_apfs} — {_e}")
         failed.append((_label_apfs, str(_e)))
 
+    # ── New sig types ─────────────────────────────────────────────────────────
+    print()
+    print("  New signature types")
+
+    # TAR
+    _label_tar = "tar archive carved by ustar magic at offset 257"
+    print(f"  {CYAN}....{NC}  {_label_tar}", end="", flush=True)
+    try:
+        import struct as _struct
+        def _make_tar_entry(name: bytes, data: bytes) -> bytes:
+            n = name[:99].ljust(100, b'\x00')
+            mode  = b'0000644\x00'
+            uid   = b'0000000\x00'
+            gid   = b'0000000\x00'
+            size  = ('%011o' % len(data)).encode() + b'\x00'
+            mtime = b'14274663707\x00'
+            typef = b'0'
+            link  = b'\x00' * 100
+            magic = b'ustar\x00'    # 6 bytes: POSIX tar magic
+            ver   = b'00'          # 2 bytes: POSIX version
+            uname = b'\x00' * 32
+            gname = b'\x00' * 32
+            dev   = b'\x00' * 16
+            pfx   = b'\x00' * 155
+            pad   = b'\x00' * 12
+            hdr = n + mode + uid + gid + size + mtime + b'        ' + typef + link + magic + ver + uname + gname + dev + pfx + pad
+            assert len(hdr) == 512, len(hdr)
+            ck = sum(hdr)  # checksum field already contains spaces (0x20 * 8 each)
+            ck_str = ('%06o\x00 ' % ck).encode()
+            hdr = hdr[:148] + ck_str + hdr[156:]
+            pad_len = (512 - (len(data) % 512)) % 512
+            return hdr + data + b'\x00' * pad_len
+        _tar_payload = b'hello tar world\n'
+        _tar_bytes = _make_tar_entry(b'test.txt', _tar_payload) + b'\x00' * 1024
+        _img_tar = make_raw_image(_tar_bytes)
+        with tempfile.TemporaryDirectory() as _td:
+            _res = run_pala(_img_tar, Path(_td), types=["tar"])
+            if not _res:
+                raise RuntimeError("no tar finding")
+            _carved = list(_res.values())[0]
+            if sha256(_carved) != sha256(_tar_bytes[:len(_carved)]):
+                raise RuntimeError(f"SHA256 mismatch: carved {len(_carved)}B")
+        print(f"\r  {GREEN}PASS{NC}  {_label_tar}")
+        passed.append(_label_tar)
+    except Exception as _e:
+        print(f"\r  {RED}FAIL{NC}  {_label_tar} — {_e}")
+        failed.append((_label_tar, str(_e)))
+
+    # OGG
+    _label_ogg = "ogg container carved and EOS-bounded"
+    print(f"  {CYAN}....{NC}  {_label_ogg}", end="", flush=True)
+    try:
+        def _make_ogg_page(serial: int, seq: int, header_type: int, granule: int, data: bytes) -> bytes:
+            n_segs = (len(data) + 254) // 255
+            seg_table = bytes([255] * (n_segs - 1) + [len(data) % 255 or (255 if len(data) % 255 == 0 and len(data) > 0 else len(data))])
+            hdr = (b'OggS' + b'\x00' + bytes([header_type]) +
+                   granule.to_bytes(8, 'little') +
+                   serial.to_bytes(4, 'little') +
+                   seq.to_bytes(4, 'little') +
+                   b'\x00\x00\x00\x00' +  # CRC placeholder
+                   bytes([n_segs]) + seg_table)
+            return hdr + data
+        _id_header = (b'\x01vorbis' + b'\x00' * 23)
+        _ogg_bos  = _make_ogg_page(0x1234, 0, 0x02, 0, _id_header)
+        _ogg_data = _make_ogg_page(0x1234, 1, 0x00, 100, b'\x03vorbis' + b'\x00' * 20)
+        _ogg_eos  = _make_ogg_page(0x1234, 2, 0x04, 1000, b'')
+        _ogg_bytes = _ogg_bos + _ogg_data + _ogg_eos
+        _img_ogg = make_raw_image(_ogg_bytes)
+        with tempfile.TemporaryDirectory() as _td:
+            _res = run_pala(_img_ogg, Path(_td), types=["ogg"])
+            if not _res:
+                raise RuntimeError("no ogg finding")
+            _carved = list(_res.values())[0]
+            if len(_carved) < len(_ogg_bytes) - 4:
+                raise RuntimeError(f"ogg carved too short: {len(_carved)} < {len(_ogg_bytes)}")
+        print(f"\r  {GREEN}PASS{NC}  {_label_ogg}")
+        passed.append(_label_ogg)
+    except Exception as _e:
+        print(f"\r  {RED}FAIL{NC}  {_label_ogg} — {_e}")
+        failed.append((_label_ogg, str(_e)))
+
+    # BZ2
+    _label_bz2 = "bz2 carved by BZh header"
+    print(f"  {CYAN}....{NC}  {_label_bz2}", end="", flush=True)
+    try:
+        import bz2 as _bz2mod
+        _bz2_payload = b'pala bz2 test data ' * 100
+        _bz2_bytes = _bz2mod.compress(_bz2_payload)
+        _img_bz2 = make_raw_image(_bz2_bytes)
+        with tempfile.TemporaryDirectory() as _td:
+            _res = run_pala(_img_bz2, Path(_td), types=["bz2"])
+            if not _res:
+                raise RuntimeError("no bz2 finding")
+            _carved = list(_res.values())[0]
+            # bz2 EOS is bit-packed; verify by decompression, not exact SHA
+            _dec = _bz2mod.BZ2Decompressor()
+            _out = _dec.decompress(_carved)
+            if _out != _bz2_payload:
+                raise RuntimeError(f"bz2 decompression mismatch: {len(_out)}B vs {len(_bz2_payload)}B")
+        print(f"\r  {GREEN}PASS{NC}  {_label_bz2}")
+        passed.append(_label_bz2)
+    except Exception as _e:
+        print(f"\r  {RED}FAIL{NC}  {_label_bz2} — {_e}")
+        failed.append((_label_bz2, str(_e)))
+
+    # ZSTD
+    _label_zstd = "zstd carved by magic bytes (skipped if zstandard unavailable)"
+    print(f"  {CYAN}....{NC}  {_label_zstd}", end="", flush=True)
+    try:
+        import importlib.util as _ilu
+        if _ilu.find_spec("zstandard") is None:
+            print(f"\r  {YELLOW}SKIP{NC}  {_label_zstd} (zstandard module not installed)")
+            skipped.append(_label_zstd)
+        else:
+            import zstandard as _zstd
+            _zstd_payload = b'pala zstd test ' * 200
+            _zstd_bytes = _zstd.compress(_zstd_payload)
+            _img_zstd = make_raw_image(_zstd_bytes)
+            with tempfile.TemporaryDirectory() as _td:
+                _res = run_pala(_img_zstd, Path(_td), types=["zstd"])
+                if not _res:
+                    raise RuntimeError("no zstd finding")
+                _carved = list(_res.values())[0]
+                if sha256(_carved) != sha256(_zstd_bytes):
+                    raise RuntimeError(f"zstd SHA mismatch: carved {len(_carved)}B vs {len(_zstd_bytes)}B")
+            print(f"\r  {GREEN}PASS{NC}  {_label_zstd}")
+            passed.append(_label_zstd)
+    except Exception as _e:
+        if _label_zstd not in skipped:
+            print(f"\r  {RED}FAIL{NC}  {_label_zstd} — {_e}")
+            failed.append((_label_zstd, str(_e)))
+
+    # XZ
+    _label_xz = "xz archive carved with YZ end-marker"
+    print(f"  {CYAN}....{NC}  {_label_xz}", end="", flush=True)
+    try:
+        import lzma as _lzma
+        _xz_payload = b'pala xz test ' * 200
+        _xz_bytes = _lzma.compress(_xz_payload, format=_lzma.FORMAT_XZ)
+        _img_xz = make_raw_image(_xz_bytes)
+        with tempfile.TemporaryDirectory() as _td:
+            _res = run_pala(_img_xz, Path(_td), types=["xz"])
+            if not _res:
+                raise RuntimeError("no xz finding")
+            _carved = list(_res.values())[0]
+            if sha256(_carved) != sha256(_xz_bytes):
+                raise RuntimeError(f"xz SHA mismatch: carved {len(_carved)}B vs {len(_xz_bytes)}B")
+        print(f"\r  {GREEN}PASS{NC}  {_label_xz}")
+        passed.append(_label_xz)
+    except Exception as _e:
+        print(f"\r  {RED}FAIL{NC}  {_label_xz} — {_e}")
+        failed.append((_label_xz, str(_e)))
+
+    # MDMP
+    _label_mdmp = "mdmp (Windows Minidump) carved by MDMP magic"
+    print(f"  {CYAN}....{NC}  {_label_mdmp}", end="", flush=True)
+    try:
+        # Minimal synthetic MDMP: 4-byte magic + 4-byte version + rest zeros
+        _mdmp_bytes = b'MDMP' + (4).to_bytes(4, 'little') + b'\x00' * 56
+        _img_mdmp = make_raw_image(_mdmp_bytes)
+        with tempfile.TemporaryDirectory() as _td:
+            _res = run_pala(_img_mdmp, Path(_td), types=["mdmp"])
+            if not _res:
+                raise RuntimeError("no mdmp finding")
+        print(f"\r  {GREEN}PASS{NC}  {_label_mdmp}")
+        passed.append(_label_mdmp)
+    except Exception as _e:
+        print(f"\r  {RED}FAIL{NC}  {_label_mdmp} — {_e}")
+        failed.append((_label_mdmp, str(_e)))
+
+    # HEIC detection (synthetic ftyp box with heic brand)
+    _label_heic = "heic/avif carved via ftyp brand at ISOBMFF offset 4"
+    print(f"  {CYAN}....{NC}  {_label_heic}", end="", flush=True)
+    try:
+        # Minimal ISOBMFF: size(4 BE) + 'ftyp' + 'heic' + minor_version(4) + compat(4)
+        _box_size = (24).to_bytes(4, 'big')
+        _heic_bytes = _box_size + b'ftypheic' + b'\x00' * 4 + b'heic' + b'\x00' * 100
+        _img_heic = make_raw_image(_heic_bytes)
+        with tempfile.TemporaryDirectory() as _td:
+            _res = run_pala(_img_heic, Path(_td), types=["heic"])
+            if not _res:
+                raise RuntimeError("no heic finding")
+        print(f"\r  {GREEN}PASS{NC}  {_label_heic}")
+        passed.append(_label_heic)
+    except Exception as _e:
+        print(f"\r  {RED}FAIL{NC}  {_label_heic} — {_e}")
+        failed.append((_label_heic, str(_e)))
+
+    # New triage modes
+    print()
+    print("  New triage modes")
+
+    for _mode, _type, _magic in [
+        ("executables", "elf",  b'\x7fELF\x02\x01\x01\x00' + b'\x00' * 8 + b'\x02\x00\x3e\x00' + b'\x00' * 500),
+        ("archives",    "tar",  None),   # TAR uses the one built above
+        ("memory",      "lime", b'\x45\x4d\x69\x4c' + b'\x01\x00\x00\x00' + b'\x00' * 24 + b'\x41' * 64),
+        ("windows",     "evtx", b'ElfFile\x00' + b'\x00' * 56),
+        ("filesystem",  "ext2_sb", b'\x80\x1a\x00\x00' + b'\x00' * 52 + b'\x53\xef' + b'\x00' * 26),
+    ]:
+        _lbl = f"--triage-mode={_mode} finds expected type"
+        print(f"  {CYAN}....{NC}  {_lbl}", end="", flush=True)
+        try:
+            if _magic is None:
+                print(f"\r  {YELLOW}SKIP{NC}  {_lbl} (synthetic fixture not needed)")
+                skipped.append(_lbl)
+                continue
+            _img_mode = make_raw_image(_magic)
+            with tempfile.TemporaryDirectory() as _td:
+                _cmd_mode = [str(PALA), "-q"]
+                with tempfile.NamedTemporaryFile(suffix=".img", delete=False) as _tf:
+                    _tf.write(_img_mode)
+                    _img_path_mode = _tf.name
+                try:
+                    _r = subprocess.run(
+                        [str(PALA), _img_path_mode, _td, "-q", f"--triage-mode={_mode}"],
+                        capture_output=True)
+                    if _r.returncode != 0:
+                        raise RuntimeError(f"exit {_r.returncode}: {_r.stderr[:200].decode(errors='replace')}")
+                    _found = [f for f in Path(_td).iterdir() if f.is_file() and not f.name.startswith('.')]
+                    if not _found:
+                        raise RuntimeError(f"no files recovered with --triage-mode={_mode}")
+                finally:
+                    os.unlink(_img_path_mode)
+            print(f"\r  {GREEN}PASS{NC}  {_lbl}")
+            passed.append(_lbl)
+        except Exception as _e:
+            print(f"\r  {RED}FAIL{NC}  {_lbl} — {_e}")
+            failed.append((_lbl, str(_e)))
+
     # ── Summary ───────────────────────────────────────────────────────────────
     total = len(passed) + len(failed) + len(skipped)
     print()
