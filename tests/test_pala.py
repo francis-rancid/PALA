@@ -1122,6 +1122,26 @@ def main():
         {"subsec_time_original": "123", "gps_date": "2024:06:15"},
     )
 
+    # JPEG EXIF with only SubSecTimeOriginal and no GPS sub-IFD
+    def _make_jpeg_subsec_only(subsec_val="456"):
+        _subsec_bytes = subsec_val.encode() + b'\x00'
+        _tiff_hdr = b'II' + struct.pack('<H', 0x002A) + struct.pack('<I', 8)
+        _n_ifd0 = struct.pack('<H', 1)
+        _subsec = struct.pack('<HHI', 0x9011, 2, len(_subsec_bytes)) + _subsec_bytes
+        _ifd0 = _n_ifd0 + _subsec + struct.pack('<I', 0)
+        _tiff = _tiff_hdr + _ifd0
+        _app1_body = b'Exif\x00\x00' + _tiff
+        _app1 = b'\xFF\xE1' + struct.pack('>H', len(_app1_body) + 2) + _app1_body
+        _com = b'\xFF\xFE' + struct.pack('>H', 502) + b'\x00' * 500
+        return b'\xFF\xD8' + _app1 + _com + b'\xFF\xD9'
+
+    run_meta_test(
+        "JPEG EXIF: subsec_time_original alone (no GPS IFD)",
+        _make_jpeg_subsec_only(),
+        "jpeg",
+        {"subsec_time_original": "456"},
+    )
+
     # ── Resume / checkpoint (TODO #7) ────────────────────────────────────────
     print("\n  Resume / checkpoint")
     _resume_fixture = make_sqlite()
@@ -1505,6 +1525,21 @@ def main():
     except Exception as _e:
         print(f"\r  {RED}FAIL{NC}  --triage-mode=databases — {_e}")
         failed.append(("--triage-mode=databases recovers sqlite, skips pdf", str(_e)))
+
+    # databases: ese found (ese added to databases preset in v0.3.0)
+    print(f"  {CYAN}....{NC}  --triage-mode=databases finds ese, skips pdf", end="", flush=True)
+    try:
+        _ese_triage = b'\x01\x00\x00\x00' + b'\xef\xcd\xab\x89' + b'\x00' * (4096 - 8)
+        _img_db2 = make_raw_image(_ese_triage, _triage_pdf)
+        _res_db2 = _run_triage(_img_db2, "databases")
+        _types_db2 = {f["type"] for f in _res_db2}
+        assert "ese" in _types_db2,      f"ese missing; got {_types_db2}"
+        assert "pdf" not in _types_db2,  f"pdf should be excluded; got {_types_db2}"
+        print(f"\r  {GREEN}PASS{NC}  --triage-mode=databases finds ese, skips pdf")
+        passed.append("--triage-mode=databases finds ese, skips pdf")
+    except Exception as _e:
+        print(f"\r  {RED}FAIL{NC}  --triage-mode=databases finds ese, skips pdf — {_e}")
+        failed.append(("--triage-mode=databases finds ese, skips pdf", str(_e)))
 
     # media: jpeg found; pdf NOT found
     print(f"  {CYAN}....{NC}  --triage-mode=media recovers jpeg, skips pdf", end="", flush=True)
@@ -2443,6 +2478,29 @@ def main():
         print(f"\r  {RED}FAIL{NC}  {_label_usn} — {_e}")
         failed.append((_label_usn, str(_e)))
 
+    # usn_rec: validator rejects records with bad alignment or fname overflow
+    for _ulabel, _bad_rec in [
+        ("usn_rec rejects rec_len not 8-aligned",
+         struct.pack("<IHH", 65, 2, 0) + b'\x00' * 48 + struct.pack("<HH", 4, 60) + b'A\x00' * 2 + b'\x00' * 3),
+        ("usn_rec rejects fname_len + fname_off > rec_len",
+         # rec_len=72 but fname_off=60 + fname_len=20 = 80 > 72
+         struct.pack("<IHH", 72, 2, 0) + b'\x00' * 48 + struct.pack("<HH", 20, 60) + b'A\x00' * 6),
+        ("usn_rec rejects odd fname_len",
+         # fname_len=3 is not a multiple of 2 (UTF-16 must be even)
+         struct.pack("<IHH", 72, 2, 0) + b'\x00' * 48 + struct.pack("<HH", 3, 60) + b'A\x00' * 4 + b'\x00' * 5),
+    ]:
+        print(f"  {CYAN}....{NC}  {_ulabel}", end="", flush=True)
+        try:
+            _img_bad_usn = make_raw_image(_bad_rec + b'\x00' * 64)
+            with tempfile.TemporaryDirectory() as _td_bad:
+                _res_bad = run_pala(_img_bad_usn, Path(_td_bad), types=["usn_rec"])
+                assert not _res_bad, f"expected 0 findings; got {list(_res_bad)}"
+            print(f"\r  {GREEN}PASS{NC}  {_ulabel}")
+            passed.append(_ulabel)
+        except Exception as _e:
+            print(f"\r  {RED}FAIL{NC}  {_ulabel} — {_e}")
+            failed.append((_ulabel, str(_e)))
+
     # ESE / JET Blue database carving
     _label_ese = "ese database carved by ESE magic at offset 4"
     print(f"  {CYAN}....{NC}  {_label_ese}", end="", flush=True)
@@ -2488,6 +2546,7 @@ def main():
         ("memory",      "lime", b'\x45\x4d\x69\x4c' + b'\x01\x00\x00\x00' + b'\x00' * 24 + b'\x41' * 64),
         ("windows",     "evtx", b'ElfFile\x00' + b'\x00' * 56),
         ("filesystem",  "ext2_sb", b'\x80\x1a\x00\x00' + b'\x00' * 52 + b'\x53\xef' + b'\x00' * 26),
+        ("forensic",    "evtx", b'ElfFile\x00' + b'\x00' * 56),
     ]:
         _lbl = f"--triage-mode={_mode} finds expected type"
         print(f"  {CYAN}....{NC}  {_lbl}", end="", flush=True)
