@@ -33,7 +33,7 @@ Three recovery stages run in sequence. Each deduplicates against all prior stage
 <tr>
 <td width="33%" valign="top">
 <strong>Stage 1 - Signature Carving</strong><br><br>
-Scans raw bytes for known file headers across 70+ types. No filesystem metadata required. Works on formatted, corrupted, or wiped drives.
+Scans raw bytes for known file headers across 85+ types. No filesystem metadata required. Works on formatted, corrupted, or wiped drives.
 </td>
 <td width="33%" valign="top">
 <strong>Stage 2 - Inode Recovery</strong><br><br>
@@ -52,6 +52,7 @@ Parses NTFS MFT run lists and FAT32 deleted entries from raw cluster offsets. Re
 - **Container unpacking** (`--container-depth`) extracts member files from carved ZIP, DOCX, XLSX, JAR, and APK archives
 - **Sector-aligned scan** (`--align=N`) restricts matches to block-aligned offsets for raw block device forensics
 - **Structured JSON output** (`--json`) for automation, pipelines, and AI analysis
+- **Metadata extraction** (`--meta`) pulls EXIF, GPS, ELF headers, PE headers, and SQLite schema from recovered files
 
 ---
 
@@ -83,7 +84,8 @@ Static caps produce garbage tails and truncated recoveries.
 - FLAC: walks METADATA_BLOCK chain, reads STREAMINFO total_samples
 - LiME: reads segment headers to compute exact dump extent
 - SquashFS, U-Boot, FIT, cramfs: all header-derived
-    - RAR5: VINT block walker stops at End of Archive block (type 5)
+- TAR, OGG, Zstandard: header and block chain walkers
+- RAR5: VINT block walker stops at End of Archive block (type 5)
 
 </td>
 <td width="25%" align="center" valign="top">
@@ -106,8 +108,8 @@ Carving alone misses fragmented files.
 <br><br>
 
 - Per-finding: offset, type, size, path, quality, sha256
+- Add <code>--meta</code> to include file metadata in JSON output
 - Pipe directly into Claude Code, jq, or any downstream processor
-- Entire recovery session stays in one terminal
 
 </td>
 </tr>
@@ -203,7 +205,16 @@ Claude reads the structured output, ranks candidates by type and size, explains 
       "size": 3145728,
       "path": "/media/usb/recovered/jpg_0001.jpg",
       "quality": "complete",
-      "sha256": "a3f2..."
+      "sha256": "a3f2...",
+      "meta": {
+        "make": "Apple",
+        "model": "iPhone 15 Pro",
+        "datetime_original": "2024:06:15 14:23:07",
+        "subsec_time_original": "823",
+        "gps_lat": 39.7392,
+        "gps_lon": -104.9903,
+        "gps_date": "2024:06:15"
+      }
     }
   ],
   "session_summary": {
@@ -259,14 +270,17 @@ pala firmware.bin recovered/ --triage-mode=firmware
 # Sector-aligned scan for block devices
 sudo pala /dev/sdb recovered/ --align=512
 
-# Structured output for downstream tooling
-pala disk.img out/ --json | jq '.findings[] | {ext, size, offset}'
+# Structured output with embedded file metadata
+pala disk.img out/ --json --meta | jq '.findings[] | {ext, size, meta}'
 
 # Skip encrypted sectors, unpack ZIP members
 pala disk.img out/ --skip-high-entropy --container-depth
 
-# Windows forensic artifacts only
+# Windows forensic artifacts only (evtx, regf, lnk, pf, mdmp, usn_rec, ese)
 pala disk.img out/ --triage-mode=windows
+
+# Active Directory database recovery (ntds.dit and related ESE files)
+pala disk.img out/ -t ese
 ```
 
 **Critical:** the output directory must be on a different drive than the source. Writing recovered files to the same drive risks overwriting data you are trying to recover. PALA warns if source and output share a device.
@@ -284,7 +298,7 @@ Options:
   -l, --list                List available types and exit
   -q, --quiet               Suppress progress output (use with --json)
       --json                Write structured JSON summary to stdout
-      --meta                Extract file metadata into JSON output
+      --meta                Extract file metadata into JSON output (see --meta Fields below)
       --max-size <bytes>    Maximum size per recovered file
       --min-size <bytes>    Minimum size per recovered file
   -n, --count <n>           Stop after recovering N files
@@ -303,10 +317,27 @@ Options:
 
 ---
 
+## --meta Fields
+
+When `--meta` is passed alongside `--json`, each finding includes a `meta` object. Fields vary by file type.
+
+| Type | Fields |
+|------|--------|
+| **jpeg** | `make`, `model`, `orientation`, `datetime_original`, `datetime_digitized`, `subsec_time_original`, `gps_lat`, `gps_lon`, `gps_date` |
+| **png** | `creation_time`, `software`, `author`, `comment`, `title`, `description`, `copyright`, `source` |
+| **elf** | `class` (ELF32/ELF64), `endian` (little/big), `type` (executable/shared/relocatable/core), `machine` (x86-64/ARM64/...) |
+| **pe** | `machine` (x64/x86/ARM64), `subsystem` (windows-gui/windows-cui/native/...), `compile_time`, `num_sections` |
+| **sqlite** | `page_size`, `page_count`, `journal_mode`, `application_id`, `user_version` |
+| **ntfs_mft** | `seq`, `flags`, `attr_types` |
+
+`subsec_time_original` holds the sub-second precision component from EXIF tag 0x9011. `gps_date` is the GPS datestamp from GPS IFD tag 0x001D in `YYYY:MM:DD` format. Both fields are useful for detecting timestamp manipulation - a mismatch between `datetime_original` and `gps_date`, or a zeroed `subsec_time_original`, can indicate that the capture timestamp was edited after the fact.
+
+---
+
 ## Supported Types
 
 <details>
-<summary>85+ supported file types across 8 categories</summary>
+<summary>85+ supported file types across 16 categories</summary>
 
 | Category | Types |
 |----------|-------|
@@ -315,7 +346,7 @@ Options:
 | **Audio** | mp3 (ID3), flac, aac (ADTS), ogg |
 | **Documents** | pdf, rtf, ole2 (doc/xls/ppt), zip (docx/xlsx/pptx/jar/apk), eml |
 | **Archives** | gz, 7z, rar, rar5, tar, xz, bz2, zstd |
-| **Databases** | sqlite, sqlite-wal, ese/edb (ntds.dit, SRUDB.dat, DataStore.edb) |
+| **Databases** | sqlite, sqlite-wal, ese/edb (ntds.dit, SRUDB.dat, DataStore.edb, Windows.edb) |
 | **Executables** | elf, pe/mz, dex, art |
 | **Forensic - Windows** | evtx, regf, lnk, prefetch, thumbcache, hibernate, bsod dumps, mdmp (minidump), usn_rec ($USNJRNL:$J change journal) |
 | **Forensic - Filesystem** | ntfs-mft, fat32-fsinfo, ext2/3/4 superblock, ufs1/ufs2 superblock, apfs |
@@ -458,7 +489,7 @@ Contributions welcome. The most useful additions are new file signatures. Extend
 See [CONTRIBUTORS.md](CONTRIBUTORS.md).
 
 - **Nicholas Kloster** ([@francis-rancid](https://github.com/francis-rancid)) - author
-- **Claude Code** ([claude.ai/code](https://claude.ai/code)) - filesystem recovery stages, MFT run list parsing, FAT32 deleted-entry recovery, entropy classification, ZIP container depth, firmware signatures, FLAC/LiME/SquashFS/U-Boot/FIT/cramfs size parsers, sector-aligned scan mode, and test suite
+- **Claude Code** ([claude.ai/code](https://claude.ai/code)) - filesystem recovery stages, MFT run list parsing, FAT32 deleted-entry recovery, entropy classification, ZIP container depth, firmware signatures, FLAC/LiME/SquashFS/U-Boot/FIT/cramfs/TAR/OGG/Zstandard/RAR5 size parsers, NTFS USN journal carving, ESE database signatures, EXIF metadata extraction, sector-aligned scan mode, and test suite
 
 ---
 
