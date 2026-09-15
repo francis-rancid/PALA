@@ -30,6 +30,7 @@ pub enum Special {
     SquashfsLe, SquashfsBe,
     Uboot, Fit, Cramfs,
     Tar, Ogg, Bz2, Zstd,
+    Rar5, UsnRec, Ese,
 }
 
 // Static signature table — zero-cost, embedded in binary.
@@ -175,12 +176,17 @@ static SIGS: &[Sig] = &[
     // OggS magic; ogg_ok validates beginning-of-stream page flag; ogg_size walks page headers.
     Sig { name:"ogg",          ext:"ogg",   magic:b"OggS",              moff:0, em:None, em_last:false, em_trail:0, special:Special::Ogg,    max:500*MB, min:27,  desc:"OGG Media Container" },
     // ── RAR 5.x ──────────────────────────────────────────────────────────────
-    // RAR5 has a different 8-byte magic from RAR4; the RAR4 size parser cannot walk RAR5 blocks.
-    // Separate sig ensures correct type labeling; static cap is the fallback (no RAR5 block walker yet).
-    Sig { name:"rar5",         ext:"rar",   magic:b"Rar!\x1a\x07\x01\x00", moff:0, em:None, em_last:false, em_trail:0, special:Special::None, max:4*GB, min:8, desc:"RAR 5.x Archive" },
+    // RAR5 has a different 8-byte magic from RAR4; rar5_size() walks blocks via VINT headers.
+    Sig { name:"rar5",         ext:"rar",   magic:b"Rar!\x1a\x07\x01\x00", moff:0, em:None, em_last:false, em_trail:0, special:Special::Rar5,   max:4*GB, min:8, desc:"RAR 5.x Archive" },
     // ── Windows Mini Dump ─────────────────────────────────────────────────────
     // MDMP: Windows Minidump (from crash reporting, WER, user-mode dumps). Separate from BSOD PAGEDUMP.
     Sig { name:"mdmp",         ext:"dmp",   magic:b"MDMP",              moff:0, em:None, em_last:false, em_trail:0, special:Special::None,   max:512*MB, min:32,  desc:"Windows Minidump (WER/User-mode)" },
+    // ── NTFS USN Change Journal ───────────────────────────────────────────────────
+    // $USNJRNL:$J v2 records: RecordLength(u32) + MajorVersion=2(u16) + MinorVersion=0(u16) at moff=4.
+    Sig { name:"usn_rec",      ext:"usn",   magic:b"\x02\x00\x00\x00",  moff:4, em:None, em_last:false, em_trail:0, special:Special::UsnRec, max:64*MB,  min:64,  desc:"NTFS USN Change Journal Records" },
+    // ── ESE / JET Blue Database ───────────────────────────────────────────────────
+    // ESE magic 0xEFCDAB89 at offset 4; covers ntds.dit, SRUDB.dat, DataStore.edb, Windows.edb.
+    Sig { name:"ese",          ext:"edb",   magic:b"\xef\xcd\xab\x89",  moff:4, em:None, em_last:false, em_trail:0, special:Special::Ese,    max:2*GB,   min:4096,desc:"ESE/JET Blue Database (ntds.dit/SRUDB.dat)" },
 ];
 
 // ─── Runtime signature (static or corpus-loaded) ──────────────────────────────
@@ -972,6 +978,95 @@ fn ogg_ok(d: &[u8]) -> bool {
     d.len() >= 28 && &d[0..4] == b"OggS" && d[4] == 0 && d[5] & 0x02 != 0
 }
 
+// ── RAR5 VINT / block walker ──────────────────────────────────────────────────
+
+fn rar5_vint(d: &[u8], pos: &mut usize) -> Option<u64> {
+    let mut val = 0u64;
+    let mut shift = 0u32;
+    loop {
+        if *pos >= d.len() { return None; }
+        let b = d[*pos]; *pos += 1;
+        val |= ((b & 0x7F) as u64) << shift;
+        if b & 0x80 == 0 { break; }
+        shift += 7;
+        if shift >= 63 { return None; }
+    }
+    Some(val)
+}
+
+fn rar5_size(d: &[u8]) -> Option<usize> {
+    if d.len() < 8 { return None; }
+    let mut pos = 8usize; // skip 8-byte RAR5 signature
+    loop {
+        if pos + 4 > d.len() { return None; }
+        pos += 4; // skip CRC32
+        let hdr_size = rar5_vint(d, &mut pos)? as usize;
+        if hdr_size == 0 { return None; }
+        let hdr_body_start = pos;
+        let hdr_body_end = pos + hdr_size;
+        if hdr_body_end > d.len() { return None; }
+
+        let mut hpos = hdr_body_start;
+        let block_type = rar5_vint(d, &mut hpos)?;
+        let flags      = rar5_vint(d, &mut hpos)?;
+
+        // RHFL_DATA (bit 2): data area follows header; its size is the LAST VINT in header body.
+        let data_area_size: usize = if flags & 0x0004 != 0 && hdr_body_end > hdr_body_start {
+            let last = d[hdr_body_end - 1];
+            if last & 0x80 != 0 { return None; } // not a valid VINT terminator
+            let mut start = hdr_body_end - 1;
+            while start > hdr_body_start && d[start - 1] & 0x80 != 0 {
+                start -= 1;
+            }
+            let mut v = 0u64; let mut sh = 0u32;
+            for &b in &d[start..hdr_body_end] {
+                v |= ((b & 0x7F) as u64) << sh;
+                sh += 7;
+            }
+            v as usize
+        } else {
+            0
+        };
+
+        pos = hdr_body_end + data_area_size;
+        if pos > d.len() { return None; }
+        if block_type == 5 { return Some(pos); } // End of Archive
+    }
+}
+
+// ── NTFS USN v2 Change Journal ────────────────────────────────────────────────
+
+fn usn_ok(d: &[u8]) -> bool {
+    if d.len() < 64 { return false; }
+    let rec_len = u32::from_le_bytes([d[0], d[1], d[2], d[3]]) as usize;
+    let major   = u16::from_le_bytes([d[4], d[5]]);
+    let minor   = u16::from_le_bytes([d[6], d[7]]);
+    if major != 2 || minor != 0 { return false; }
+    if rec_len < 64 || rec_len > 65536 || rec_len % 8 != 0 { return false; }
+    let fname_len = u16::from_le_bytes([d[56], d[57]]) as usize;
+    let fname_off = u16::from_le_bytes([d[58], d[59]]) as usize;
+    fname_off >= 60 && fname_len > 0 && fname_len % 2 == 0 && fname_off + fname_len <= rec_len
+}
+
+fn usn_size(d: &[u8]) -> Option<usize> {
+    let mut pos = 0usize;
+    while pos + 64 <= d.len() {
+        let rec_len = u32::from_le_bytes([d[pos], d[pos+1], d[pos+2], d[pos+3]]) as usize;
+        if rec_len < 64 || rec_len > 65536 || rec_len % 8 != 0 { break; }
+        let major = u16::from_le_bytes([d[pos+4], d[pos+5]]);
+        let minor = u16::from_le_bytes([d[pos+6], d[pos+7]]);
+        if major != 2 || minor != 0 { break; }
+        pos += rec_len;
+    }
+    if pos > 0 { Some(pos) } else { None }
+}
+
+// ── ESE / JET Blue ────────────────────────────────────────────────────────────
+
+fn ese_ok(d: &[u8]) -> bool {
+    d.len() >= 8 && d[4..8] == [0xEF, 0xCD, 0xAB, 0x89]
+}
+
 // ─── Subtype detection ────────────────────────────────────────────────────────
 
 fn riff_sub(data: &[u8]) -> (&'static str, &'static str) {
@@ -1251,6 +1346,11 @@ fn exif_parse(data: &[u8], m: &mut MetaMap) {
                     m.insert((if tag == 0x9003 { "datetime_original" } else { "datetime_digitized" }).into(), v.into());
                 }
             }
+            0x9011 => { // SubSecTimeOriginal
+                if let Some(v) = exif_ascii_str(data, le, dtype, count, ep + 8) {
+                    m.insert("subsec_time_original".into(), v.into());
+                }
+            }
             0x8825 => { gps_off = Some(u32at!(ep + 8) as usize); }
             _ => {}
         }
@@ -1283,6 +1383,11 @@ fn exif_parse(data: &[u8], m: &mut MetaMap) {
                                  exif_rational(data, le, off +  8) / 60.0 +
                                  exif_rational(data, le, off + 16) / 3600.0;
                         if tag == 0x0002 { lat = Some(dd); } else { lon = Some(dd); }
+                    }
+                }
+                0x001D => { // GPSDateStamp
+                    if let Some(v) = exif_ascii_str(data, le, dtype, count, ep + 8) {
+                        m.insert("gps_date".into(), v.into());
                     }
                 }
                 _ => {}
@@ -1781,6 +1886,8 @@ fn scan_sig(src: &[u8], base_offset: usize, sig: &DynSig, sig_idx: usize, max_ov
             Special::Ogg         => ogg_ok(carved),
             Special::Bz2         => bz2_ok(carved),
             Special::Zstd        => zstd_ok(carved),
+            Special::UsnRec      => usn_ok(carved),
+            Special::Ese         => ese_ok(carved),
             _                    => true,
         };
         if !valid { continue; }
@@ -2001,6 +2108,21 @@ fn scan_sig(src: &[u8], base_offset: usize, sig: &DynSig, sig_idx: usize, max_ov
             }
             // Bz2: bit-packed EOS marker; no byte-aligned trim possible.
             Special::Bz2 => (&sig.ext, &sig.desc, carved),
+            Special::Rar5 => {
+                let trim = match rar5_size(carved) {
+                    Some(n) if n <= carved.len() => { trunc = false; &carved[..n] }
+                    _ => carved,
+                };
+                (&sig.ext, &sig.desc, trim)
+            }
+            Special::UsnRec => {
+                let trim = match usn_size(carved) {
+                    Some(n) if n <= carved.len() => { trunc = false; &carved[..n] }
+                    _ => carved,
+                };
+                (&sig.ext, &sig.desc, trim)
+            }
+            Special::Ese => (&sig.ext, &sig.desc, carved),
             _ => (&sig.ext, &sig.desc, carved),
         };
 
@@ -2054,6 +2176,8 @@ fn frag_valid(data: &[u8], special: Special) -> bool {
         Special::Ogg         => ogg_ok(data),
         Special::Bz2         => bz2_ok(data),
         Special::Zstd        => zstd_ok(data),
+        Special::UsnRec      => usn_ok(data),
+        Special::Ese         => ese_ok(data),
         Special::Zip => zip_eocd_end(data).is_some(),
         _            => true, // Riff/Mp4/Mkv/etc — accept; size-trimmer corrects the bounds
     }

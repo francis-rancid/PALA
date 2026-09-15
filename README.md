@@ -46,8 +46,8 @@ Parses NTFS MFT run lists and FAT32 deleted entries from raw cluster offsets. Re
 </tr>
 </table>
 
-- **80+ file types** across media, documents, archives, forensic artifacts, firmware images, and memory captures
-- **Precision size parsers** for FLAC, LiME, SquashFS, U-Boot, FIT, cramfs, TAR, OGG, and Zstandard - header-derived exact boundaries, no static caps
+- **85+ file types** across media, documents, archives, forensic artifacts, firmware images, and memory captures
+- **Precision size parsers** for FLAC, LiME, SquashFS, U-Boot, FIT, cramfs, TAR, OGG, Zstandard, and RAR5 - header-derived exact boundaries, no static caps
 - **Entropy classification** identifies and optionally skips encrypted sectors to eliminate false-positive hits
 - **Container unpacking** (`--container-depth`) extracts member files from carved ZIP, DOCX, XLSX, JAR, and APK archives
 - **Sector-aligned scan** (`--align=N`) restricts matches to block-aligned offsets for raw block device forensics
@@ -83,6 +83,7 @@ Static caps produce garbage tails and truncated recoveries.
 - FLAC: walks METADATA_BLOCK chain, reads STREAMINFO total_samples
 - LiME: reads segment headers to compute exact dump extent
 - SquashFS, U-Boot, FIT, cramfs: all header-derived
+    - RAR5: VINT block walker stops at End of Archive block (type 5)
 
 </td>
 <td width="25%" align="center" valign="top">
@@ -305,7 +306,7 @@ Options:
 ## Supported Types
 
 <details>
-<summary>70+ supported file types across 8 categories</summary>
+<summary>85+ supported file types across 8 categories</summary>
 
 | Category | Types |
 |----------|-------|
@@ -314,9 +315,9 @@ Options:
 | **Audio** | mp3 (ID3), flac, aac (ADTS), ogg |
 | **Documents** | pdf, rtf, ole2 (doc/xls/ppt), zip (docx/xlsx/pptx/jar/apk), eml |
 | **Archives** | gz, 7z, rar, rar5, tar, xz, bz2, zstd |
-| **Databases** | sqlite, sqlite-wal |
+| **Databases** | sqlite, sqlite-wal, ese/edb (ntds.dit, SRUDB.dat, DataStore.edb) |
 | **Executables** | elf, pe/mz, dex, art |
-| **Forensic - Windows** | evtx, regf, lnk, prefetch, thumbcache, hibernate, bsod dumps, mdmp (minidump) |
+| **Forensic - Windows** | evtx, regf, lnk, prefetch, thumbcache, hibernate, bsod dumps, mdmp (minidump), usn_rec ($USNJRNL:$J change journal) |
 | **Forensic - Filesystem** | ntfs-mft, fat32-fsinfo, ext2/3/4 superblock, ufs1/ufs2 superblock, apfs |
 | **Forensic - Memory** | lime, hpak |
 | **Forensic - Crypto** | luks, bitlocker |

@@ -1089,6 +1089,39 @@ def main():
         {"machine": "x64", "subsystem": "windows-cui"},
     )
 
+    def _make_jpeg_exif(subsec_val="123", gps_date_val="2024:06:15"):
+        # Synthetic JPEG with APP1 EXIF carrying SubSecTimeOriginal and GPSDateStamp.
+        # TIFF layout (LE, offsets relative to TIFF header start):
+        #   0: TIFF header (8 bytes)
+        #   8: IFD0 (2 + 2*12 + 4 = 30 bytes)  [entries sorted: 0x8825, 0x9011]
+        #  38: GPS IFD (2 + 1*12 + 4 = 18 bytes)
+        #  56: GPS date string (11 bytes)
+        _subsec_bytes  = subsec_val.encode() + b'\x00'     # "123\0" = 4 bytes
+        _gps_date_bytes = gps_date_val.encode() + b'\x00' # "2024:06:15\0" = 11 bytes
+        _gps_ifd_off  = 38
+        _gps_date_off = 56
+        _tiff_hdr = b'II' + struct.pack('<H', 0x002A) + struct.pack('<I', 8)
+        _n_ifd0 = struct.pack('<H', 2)
+        _gps_ptr = struct.pack('<HHI', 0x8825, 4, 1) + struct.pack('<I', _gps_ifd_off)
+        _subsec  = struct.pack('<HHI', 0x9011, 2, len(_subsec_bytes)) + _subsec_bytes
+        _ifd0 = _n_ifd0 + _gps_ptr + _subsec + struct.pack('<I', 0)
+        _n_gps = struct.pack('<H', 1)
+        _gps_date_entry = struct.pack('<HHI', 0x001D, 2, len(_gps_date_bytes)) + struct.pack('<I', _gps_date_off)
+        _gps_ifd = _n_gps + _gps_date_entry + struct.pack('<I', 0)
+        _tiff = _tiff_hdr + _ifd0 + _gps_ifd + _gps_date_bytes
+        _app1_body = b'Exif\x00\x00' + _tiff
+        _app1 = b'\xFF\xE1' + struct.pack('>H', len(_app1_body) + 2) + _app1_body
+        # JPEG min size is 512 bytes; pad with a COM segment to satisfy the constraint
+        _com = b'\xFF\xFE' + struct.pack('>H', 502) + b'\x00' * 500
+        return b'\xFF\xD8' + _app1 + _com + b'\xFF\xD9'
+
+    run_meta_test(
+        "JPEG EXIF: subsec_time_original and gps_date extracted",
+        _make_jpeg_exif(),
+        "jpeg",
+        {"subsec_time_original": "123", "gps_date": "2024:06:15"},
+    )
+
     # ── Resume / checkpoint (TODO #7) ────────────────────────────────────────
     print("\n  Resume / checkpoint")
     _resume_fixture = make_sqlite()
@@ -2354,6 +2387,78 @@ def main():
     except Exception as _e:
         print(f"\r  {RED}FAIL{NC}  {_label_mdmp} — {_e}")
         failed.append((_label_mdmp, str(_e)))
+
+    # RAR5 block walker
+    _label_rar5 = "rar5 block walker trims to End of Archive"
+    print(f"  {CYAN}....{NC}  {_label_rar5}", end="", flush=True)
+    try:
+        # Minimal RAR5: signature + archive header block (type 1) + end-of-archive block (type 5)
+        _rar5_sig = b"Rar!\x1a\x07\x01\x00"
+        # Archive header: CRC32(4) + HeaderSize VINT(1=3) + BlockType VINT(1=1) + BlockFlags VINT(1=0) + ArchiveFlags VINT(1=0)
+        _arch_blk = b"\x00\x00\x00\x00" + b"\x03" + b"\x01" + b"\x00" + b"\x00"
+        # End of Archive: CRC32(4) + HeaderSize VINT(1=2) + BlockType VINT(1=5) + BlockFlags VINT(1=0)
+        _eoa_blk  = b"\x00\x00\x00\x00" + b"\x02" + b"\x05" + b"\x00"
+        _rar5_bytes = _rar5_sig + _arch_blk + _eoa_blk
+        _img_rar5 = make_raw_image(_rar5_bytes + b"\xff" * 512)  # trailing garbage must be excluded
+        with tempfile.TemporaryDirectory() as _td:
+            _res_rar5 = run_pala(_img_rar5, Path(_td), types=["rar5"])
+            if not _res_rar5:
+                raise RuntimeError("no rar5 finding")
+            _carved_rar5 = list(_res_rar5.values())[0]
+            if len(_carved_rar5) != len(_rar5_bytes):
+                raise RuntimeError(f"rar5_size trimmed to {len(_carved_rar5)}B, expected {len(_rar5_bytes)}B")
+        print(f"\r  {GREEN}PASS{NC}  {_label_rar5}")
+        passed.append(_label_rar5)
+    except Exception as _e:
+        print(f"\r  {RED}FAIL{NC}  {_label_rar5} — {_e}")
+        failed.append((_label_rar5, str(_e)))
+
+    # USN change journal carving
+    _label_usn = "usn_rec change journal records carved and chained"
+    print(f"  {CYAN}....{NC}  {_label_usn}", end="", flush=True)
+    try:
+        def _make_usn_record(filename):
+            fname = filename.encode("utf-16-le")
+            fname_len = len(fname)
+            fname_off = 60
+            base = 60 + fname_len
+            rec_len = (base + 7) & ~7
+            rec  = struct.pack("<IHH", rec_len, 2, 0)            # RecordLength, Major=2, Minor=0
+            rec += b'\x00' * 48                                   # FileRef..FileAttributes
+            rec += struct.pack("<HH", fname_len, fname_off)       # FileNameLength, FileNameOffset
+            rec += fname
+            rec += b'\x00' * (rec_len - len(rec))
+            return rec
+        _usn1 = _make_usn_record("secret.docx")
+        _usn2 = _make_usn_record("passwd.txt")
+        _usn_bytes = _usn1 + _usn2
+        _img_usn = make_raw_image(_usn_bytes)
+        with tempfile.TemporaryDirectory() as _td:
+            _res_usn = run_pala(_img_usn, Path(_td), types=["usn_rec"])
+            if not _res_usn:
+                raise RuntimeError("no usn_rec finding")
+        print(f"\r  {GREEN}PASS{NC}  {_label_usn}")
+        passed.append(_label_usn)
+    except Exception as _e:
+        print(f"\r  {RED}FAIL{NC}  {_label_usn} — {_e}")
+        failed.append((_label_usn, str(_e)))
+
+    # ESE / JET Blue database carving
+    _label_ese = "ese database carved by ESE magic at offset 4"
+    print(f"  {CYAN}....{NC}  {_label_ese}", end="", flush=True)
+    try:
+        # ESE header: dbstate(4) + magic(4) + zeros to fill 4096-byte page
+        _ese_bytes = b'\x01\x00\x00\x00' + b'\xef\xcd\xab\x89' + b'\x00' * (4096 - 8)
+        _img_ese = make_raw_image(_ese_bytes)
+        with tempfile.TemporaryDirectory() as _td:
+            _res_ese = run_pala(_img_ese, Path(_td), types=["ese"])
+            if not _res_ese:
+                raise RuntimeError("no ese finding")
+        print(f"\r  {GREEN}PASS{NC}  {_label_ese}")
+        passed.append(_label_ese)
+    except Exception as _e:
+        print(f"\r  {RED}FAIL{NC}  {_label_ese} — {_e}")
+        failed.append((_label_ese, str(_e)))
 
     # HEIC detection (synthetic ftyp box with heic brand)
     _label_heic = "heic/avif carved via ftyp brand at ISOBMFF offset 4"
